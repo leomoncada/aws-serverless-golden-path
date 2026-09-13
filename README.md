@@ -13,30 +13,47 @@ make demo
 
 runs the whole path on a laptop, in order, with no AWS account or
 credentials: start LocalStack, generate a service from the template into
-`sandbox/`, provision it, run its integration tests, demonstrate drift
+`sandbox/`, lint its Terraform (`terraform fmt -check`, `terraform validate`,
+`tflint`), provision it, run its integration tests, demonstrate drift
 detection and update against a copy pinned to an older template commit, then
 tear everything down. It is also exactly what `.github/workflows/ci.yml`
 runs on every pull request (`make up`, `python -m pytest tests`, `make
 demo`), so a green CI run and a local `make demo` are the same claim.
 
+`make demo` needs the repository's full git history: it pins a copy of the
+service to the oldest commit that ever touched `template/`, and reads
+committed history rather than your working tree, so a shallow clone cannot
+run it and an uncommitted template edit has no effect on what it generates.
+See [`docs/PARITY-NOTES.md`](docs/PARITY-NOTES.md).
+
 No terminal recording of this run is committed to the repository yet; the
 fastest way to see it is to run it yourself; it takes a few minutes and
-needs only Docker, Terraform, Python and `make`.
+needs Docker, Terraform, `tflint`, Python and `make`.
 
 ## The drift dashboard
 
 [`DRIFT.md`](DRIFT.md) is a generated file, rebuilt by
 `python -m platformops.check_drift`, reading
 [`platformops/registry.yaml`](platformops/registry.yaml) and reporting each
-registered service's template version and how many days behind current it
-is. That mean-lag number is the metric this whole mechanism exists to
-produce; without it, "we keep generated services current" is a claim nobody
-can check.
+registered service's template version and how many days of template history
+it is behind the current one. That mean-lag number is the metric this whole
+mechanism exists to produce; without it, "we keep generated services
+current" is a claim nobody can check.
+
+"The current template version" means one specific thing here, defined once in
+[`docs/TEMPLATE-VERSION.md`](docs/TEMPLATE-VERSION.md): the newest commit that
+touches `template/`. A service is behind when the template version its code
+was generated from is not that commit, and the lag is the distance in days
+between those two commits, not the time since the service was generated. Note
+that `cruft check` answers a different question (was this service generated
+from the tip of the template repository), so it reports a service out of date
+after any commit at all, and the two can disagree. That page says which
+answers what.
 
 One service is currently registered, [`examples/orders-ingest`](examples/orders-ingest),
-generated from this template and committed as a fixture. As of this
-writing it is current (it was generated from this repository's own HEAD),
-so the dashboard shows zero days behind:
+generated from this template and committed as a fixture. It is current: the
+template version it was generated from is the newest commit touching
+`template/`, so the dashboard shows zero days behind.
 
 ```
 1 service(s) registered, 0 behind the current template.
@@ -48,9 +65,13 @@ Mean lag: 0.0 days.
 ```
 
 The mechanism that keeps it that way is `.github/workflows/drift.yml`: on a
-schedule, it runs `platformops/check_drift.py` against every registered
-service, then `platformops/apply_drift_updates.py`, which runs `cruft
-update` for anything behind and opens a pull request with the result. That
+schedule, it runs `platformops/apply_drift_updates.py`, which runs `cruft
+update` for every service reported behind, then refreshes this dashboard with
+`platformops/check_drift.py`, then opens a pull request with the result. That
+order is not cosmetic and `tests/test_workflows.py` enforces it: `cruft
+update` refuses to run against a dirty tree, and `DRIFT.md` is a tracked file
+at the repository root, so writing the dashboard first would make every
+update refuse, exactly when a service is behind and there is work to do. That
 scheduled workflow has not yet run in this repository, so there is no real
 update pull request to link to here yet; the mechanism it depends on is
 demonstrated locally instead, with `make drift-demo`, which generates a
@@ -91,6 +112,11 @@ Community edition), with no AWS account:**
 - An absence-of-signal CloudWatch alarm reaches `ALARM` with no datapoints,
   not just `INSUFFICIENT_DATA` (`tests/test_alarms.py` in the template);
   this is the specific defect the design calls out from an earlier project.
+  That assertion cannot be skipped: the generated `make test` runs it first,
+  in its own pytest session, before anything invokes the function, and it
+  fails rather than skipping if the alarm's evaluation window is not empty.
+- The generated service's Terraform passes `terraform fmt -check`,
+  `terraform validate` and `tflint`, on the service `make demo` generates.
 - No Terraform resource in the template is conditional on the deploy target
   (`tests/test_aws_path.py::test_no_infrastructure_is_conditional_on_the_target`),
   so the code exercised locally is the code that would reach AWS.
@@ -139,11 +165,16 @@ Community edition), with no AWS account:**
 
 - Docker (with the Compose plugin)
 - Terraform
-- Python and `make`
+- [tflint](https://github.com/terraform-linters/tflint), for the lint step in
+  `make demo`
+- Python and `make`, plus `pip install -r requirements-dev.txt` (cookiecutter,
+  cruft, pytest, boto3, PyYAML)
+- A full clone: `make demo` and the drift dashboard both read git history, so
+  a `--depth 1` clone cannot run them
 
-No AWS account or credentials are needed for `make demo` or any of its
-component targets. `make portal` additionally needs Node and a local
-Backstage app; it is not part of `make demo` and CI never runs it.
+No AWS account, no credentials and no AWS CLI are needed for `make demo` or
+any of its component targets. `make portal` additionally needs Node and a
+local Backstage app; it is not part of `make demo` and CI never runs it.
 
 ## Architecture
 
@@ -155,6 +186,7 @@ aws-serverless-golden-path/
 │       ├── infra/                         Lambda, S3, DynamoDB, SQS DLQ, alarms
 │       ├── app/                           Python handler, structured JSON logging
 │       ├── tests/                         contract, integration and alarm tests
+│       ├── localstack/init/ready.d/       creates the tfstate bucket on startup
 │       ├── docs/runbooks/                 first-aws-deploy
 │       ├── .github/workflows/             ci.yml, deploy-aws.yml
 │       ├── Makefile                       the same targets CI calls
@@ -162,11 +194,12 @@ aws-serverless-golden-path/
 ├── backstage/template.yaml                the thin fetch:cookiecutter adapter
 ├── platformops/
 │   ├── registry.yaml                      services generated from this template
-│   ├── check_drift.py                     reads the registry, asks cruft, builds ServiceStatus
+│   ├── check_drift.py                     resolves each service's template version, builds ServiceStatus
 │   ├── apply_drift_updates.py             runs cruft update for services behind
 │   └── drift_report.py                    renders DRIFT.md
 ├── docs/
 │   ├── DESIGN.md                          the full design this repository implements
+│   ├── TEMPLATE-VERSION.md                what "the current template version" means
 │   ├── PARITY-NOTES.md                    LocalStack-vs-AWS divergences, expected vs observed
 │   └── adr/                               five architecture decision records
 ├── examples/orders-ingest/                one generated service, committed, as a fixture

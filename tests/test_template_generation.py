@@ -1,4 +1,4 @@
-import subprocess, pathlib, shutil, pytest, yaml
+import subprocess, pathlib, pytest, yaml
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -44,6 +44,65 @@ def test_generated_compose_pins_the_localstack_image(generated):
     compose = yaml.safe_load((generated / "docker-compose.yml").read_text())
     image = compose["services"]["localstack"]["image"]
     assert image == "localstack/localstack:4", "must be pinned; :latest needs a licence token"
+
+
+def test_generated_compose_waits_on_the_bucket_not_the_health_endpoint(generated):
+    # The platform's own compose file has done this since Task 1; the
+    # generated one did not, and compensated with an unbounded shell loop in
+    # its Makefile. /_localstack/health answers 200 before the ready.d hooks
+    # run, so `--wait` against the base image's healthcheck returns before
+    # the tfstate bucket exists, which is the actual precondition for the
+    # next command a developer runs.
+    compose = yaml.safe_load((generated / "docker-compose.yml").read_text())
+    healthcheck = compose["services"]["localstack"].get("healthcheck")
+    assert healthcheck, "generated compose has no explicit healthcheck"
+    assert "head-bucket" in " ".join(healthcheck["test"])
+    assert healthcheck["retries"] == 40, "readiness must be bounded, not infinite"
+
+    mounts = compose["services"]["localstack"]["volumes"]
+    assert any("/etc/localstack/init/ready.d" in m for m in mounts), (
+        "the bucket has to be created by an init hook if the healthcheck "
+        "waits on it"
+    )
+    hook = generated / "localstack/init/ready.d/01-tfstate-bucket.sh"
+    assert hook.is_file(), "the mounted init hook is not generated"
+    assert "create-bucket --bucket tfstate" in hook.read_text()
+
+
+def test_generated_make_up_is_bounded_and_needs_no_aws_cli(generated):
+    # The loop this replaced never gave up, and needed the AWS CLI, which the
+    # generated README's prerequisites did not list and plenty of laptops do
+    # not have: `until aws ...` then fails with command-not-found, the body
+    # runs `aws ... || sleep 2`, and `make up` hangs forever with no output.
+    body = (generated / "Makefile").read_text()
+    up = body.split("\nup:\n", 1)[1].split("\n\n", 1)[0]
+    assert "docker compose up -d --wait" in up
+    assert "until" not in up, "make up must not loop; the healthcheck is bounded"
+    assert "aws " not in up, "make up must not need the AWS CLI"
+
+    readme = (generated / "README.md").read_text()
+    assert "no AWS CLI" in readme, "the prerequisites must say what is needed"
+
+
+def test_the_absence_of_signal_assertion_cannot_be_skipped(generated):
+    # The repository's headline observability finding. It used to skip when
+    # the alarm's window was not empty, and a skip exits 0, so CI could go
+    # green having never asserted it. Nothing enforced the collection order
+    # that kept the window empty either: alphabetical collection put alarms
+    # before integration by luck, not by design.
+    alarms = (generated / "tests/test_alarms.py").read_text()
+    assert "pytest.skip" not in alarms, (
+        "the absence-of-signal test must not be skippable: it is the one "
+        "assertion this template's observability claim rests on"
+    )
+    assert 'alarm["StateValue"] == "ALARM"' in alarms
+
+    makefile = (generated / "Makefile").read_text()
+    test_target = makefile.split("\ntest:\n", 1)[1].split("\n\n", 1)[0]
+    assert "tests/test_alarms.py" in test_target.splitlines()[0], (
+        "make test must run the alarm test first, in its own session, rather "
+        "than relying on alphabetical collection order"
+    )
 
 
 def test_make_demo_exists_and_excludes_the_portal():

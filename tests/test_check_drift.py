@@ -34,6 +34,13 @@ def _commit(repo_root, message, when):
     return result.stdout.strip()
 
 
+def _git_out(repo_root, *args):
+    result = subprocess.run(
+        ["git", *args], cwd=repo_root, check=True, capture_output=True, text=True,
+    )
+    return result.stdout.strip()
+
+
 def _registry(tmp_path, name, path):
     registry = tmp_path / "registry.yaml"
     registry.write_text(textwrap.dedent(f"""
@@ -87,13 +94,21 @@ def test_a_service_pinned_to_the_current_head_is_not_behind(tmp_path):
     ]
 
 
-def test_a_service_pinned_to_an_earlier_commit_is_behind_by_its_recorded_age(tmp_path):
+def test_the_lag_is_the_distance_between_two_commits_not_the_distance_from_today(tmp_path):
+    # The lag used to be `now - the recorded commit's date`, which made
+    # DRIFT.md a committed file whose contents changed every 24 hours while
+    # nothing about the service changed. tests/test_docs.py asserts the
+    # committed file equals what the tool produces right now, so that
+    # combination was a scheduled daily CI failure from the first commit
+    # that touched template/. The lag is now the distance between the
+    # service's template version and the current one, two fixed commit
+    # dates, so this expectation is a literal: 2020-01-01 to 2020-06-01 is
+    # 152 days, today and in ten years.
     _init_repo(tmp_path)
 
-    old_date = datetime(2020, 1, 1, tzinfo=UTC)
     (tmp_path / "template").mkdir()
     (tmp_path / "template" / "cookiecutter.json").write_text("{}\n")
-    old_sha = _commit(tmp_path, "old template commit", when=old_date)
+    old_sha = _commit(tmp_path, "old template commit", when=datetime(2020, 1, 1, tzinfo=UTC))
 
     (tmp_path / "template" / "cookiecutter.json").write_text('{"v": 2}\n')
     _commit(tmp_path, "newer template commit", when=datetime(2020, 6, 1, tzinfo=UTC))
@@ -103,13 +118,75 @@ def test_a_service_pinned_to_an_earlier_commit_is_behind_by_its_recorded_age(tmp
     (svc / ".cruft.json").write_text(json.dumps({"commit": old_sha}))
     registry = _registry(tmp_path, "orders-ingest", "examples/orders-ingest")
 
-    expected_days = (datetime.now(UTC) - old_date).days
-
     statuses = collect(str(registry), str(tmp_path))
     assert len(statuses) == 1
     assert statuses[0].behind is True
     assert statuses[0].unknown is False
-    assert statuses[0].days_behind == expected_days
+    assert statuses[0].days_behind == 152
+
+
+def test_a_service_generated_from_a_commit_that_did_not_touch_the_template_is_current(tmp_path):
+    # cruft writes the template repository's HEAD into .cruft.json at
+    # generation time, whatever that commit touched. Generate a service one
+    # commit after a docs change and .cruft.json records the docs commit,
+    # which is not a template version at all. Comparing that raw SHA against
+    # the newest template-touching commit reported a service generated
+    # seconds ago as behind, and apply_drift_updates would then run a cruft
+    # update with nothing to merge. The recorded commit is resolved to the
+    # template version underneath it first; see docs/TEMPLATE-VERSION.md.
+    _init_repo(tmp_path)
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("{}\n")
+    template_sha = _commit(tmp_path, "template commit", when=datetime(2020, 1, 1, tzinfo=UTC))
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "NOTES.md").write_text("a docs change\n")
+    docs_sha = _commit(tmp_path, "docs only commit", when=datetime(2020, 2, 1, tzinfo=UTC))
+
+    svc = tmp_path / "examples" / "orders-ingest"
+    svc.mkdir(parents=True)
+    # Freshly generated, so cruft recorded repo HEAD: a docs commit.
+    (svc / ".cruft.json").write_text(json.dumps({"commit": docs_sha}))
+    registry = _registry(tmp_path, "orders-ingest", "examples/orders-ingest")
+
+    statuses = collect(str(registry), str(tmp_path))
+    assert statuses == [
+        ServiceStatus("orders-ingest", "o/r", template_sha[:7], behind=False, days_behind=0),
+    ], "a service generated seconds ago must not be reported behind"
+
+
+def test_a_shallow_clone_is_reported_unknown_not_behind(tmp_path):
+    # The condition that stopped this repository's own CI from going green.
+    # In a depth-1 clone the single fetched commit appears to add every file,
+    # so the newest commit touching template/ resolves to HEAD and every
+    # service reads as behind: a wrong answer, not a missing one. The fix is
+    # fetch-depth: 0 in both workflows (tests/test_workflows.py), but a tool
+    # that cannot see the history it needs has to say so rather than guess.
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    (origin / "template").mkdir()
+    (origin / "template" / "cookiecutter.json").write_text("{}\n")
+    _commit(origin, "template commit", when=datetime(2020, 1, 1, tzinfo=UTC))
+    (origin / "README.md").write_text("later, unrelated\n")
+    _commit(origin, "docs commit", when=datetime(2020, 2, 1, tzinfo=UTC))
+
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "--depth", "1", f"file://{origin}", str(shallow)],
+        check=True, capture_output=True, text=True,
+    )
+    assert _git_out(shallow, "rev-parse", "--is-shallow-repository") == "true"
+
+    svc = shallow / "examples" / "orders-ingest"
+    svc.mkdir(parents=True)
+    (svc / ".cruft.json").write_text(json.dumps({"commit": "abc1234567890"}))
+    registry = _registry(tmp_path, "orders-ingest", "examples/orders-ingest")
+
+    statuses = collect(str(registry), str(shallow))
+    assert len(statuses) == 1
+    assert statuses[0].unknown is True
+    assert statuses[0].behind is False
 
 
 def test_a_commit_that_only_touches_docs_does_not_make_a_service_behind(tmp_path):

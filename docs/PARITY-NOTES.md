@@ -141,3 +141,34 @@ Recording both so this register does not overstate how much diverges.
   to the template must apply this escaping to every `${{ ... }}` expression,
   not just `github.ref`, or `cruft create` / `make new` will fail or mangle
   the file.
+
+## cruft generates from committed history, never from your working tree
+
+Not a LocalStack divergence either, and the single most likely way to lose an
+hour working on this repository, so it is recorded here rather than left to be
+rediscovered.
+
+`cruft create` clones the template repository at a commit (`--checkout`, or
+HEAD by default) into a temporary directory and generates from that clone. It
+never reads your working tree. So `make new`, `make demo` and `make drift-demo`
+all generate from **committed** history, and an uncommitted edit under
+`template/` has no effect whatsoever on what they produce: no error, no
+warning, just the old file in the generated service. The first time this
+happens it reads as "my template change did nothing", which in a repository
+whose pitch is "edit the template, watch the path verify it" is the worst
+possible first experience.
+
+Two consequences worth knowing before they bite:
+
+- **Commit before you generate.** Editing `template/`, then running `make demo`
+  and finding the generated service unchanged means the edit is still
+  uncommitted, not that the template is broken. `git commit` (or `git stash`
+  and re-check) and run it again.
+- **The same root cause breaks a shallow clone.** Everything that resolves a
+  template version reads git history rather than the filesystem, so a
+  `--depth 1` clone, where the one fetched commit appears to add every file,
+  makes `check_drift` unable to tell the current template version from HEAD and
+  leaves `make drift-demo` with no earlier template commit to pin its demo
+  service to. Both workflows check out with `fetch-depth: 0` for that reason
+  (`tests/test_workflows.py` asserts it), and `check_drift` reports `unknown`
+  rather than guessing. See [`TEMPLATE-VERSION.md`](TEMPLATE-VERSION.md).

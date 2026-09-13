@@ -14,6 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Not a performance knob. Two steps below need real git history,
+          # and a default depth-1 checkout does not fail them, it gives them
+          # a wrong answer:
+          #
+          #   - `python -m pytest tests` runs check_drift, which resolves the
+          #     current template version as the newest commit touching
+          #     template/ (docs/TEMPLATE-VERSION.md). In a shallow clone the
+          #     one fetched commit appears to add every file, so that resolves
+          #     to HEAD, every registered service reads as behind, and
+          #     test_committed_drift_md_matches_what_the_tool_currently_produces
+          #     fails against the committed DRIFT.md.
+          #   - `make demo` runs drift-demo, which needs the OLDEST commit
+          #     touching template/ so the demo service starts out stale. In a
+          #     shallow clone that is HEAD too, so the target aborts with
+          #     "cannot demonstrate drift".
+          #
+          # drift.yml sets this for the same reason; tests/test_workflows.py
+          # asserts both keep it.
+          fetch-depth: 0
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.8
