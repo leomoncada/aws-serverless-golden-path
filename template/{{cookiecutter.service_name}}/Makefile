@@ -50,3 +50,9 @@ ci:
 	$(MAKE) destroy; \
 	$(MAKE) down; \
 	exit $$rc
+
+.PHONY: apply-aws
+apply-aws: ## Provision against a real AWS account. Never run by CI. Costs money.
+	@echo "This targets real AWS. Read docs/runbooks/first-aws-deploy.md first."
+	terraform -chdir=infra init -input=false -backend-config=env/aws.backend.hcl
+	terraform -chdir=infra apply -input=false

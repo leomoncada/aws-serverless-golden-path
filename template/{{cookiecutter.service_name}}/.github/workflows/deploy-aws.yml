@@ -1,0 +1,30 @@
+# Manual only, and never executed in this repository. It exists so the path to
+# AWS is code rather than a promise. See docs/runbooks/first-aws-deploy.md.
+name: deploy-aws
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type the service name to confirm a real AWS deploy
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ '{{' }} github.event.inputs.confirm == '{{cookiecutter.service_name}}' {{ '}}' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.8
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ '{{' }} secrets.AWS_DEPLOY_ROLE_ARN {{ '}}' }}
+          aws-region: "{{cookiecutter.aws_region}}"
+      - run: make apply-aws
