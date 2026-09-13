@@ -1,0 +1,57 @@
+name: drift
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+
+      - name: Refresh the drift dashboard
+        run: python -m platformops.check_drift
+
+      - name: Update registered services that are behind
+        run: |
+          set -euo pipefail
+          python - <<'PY' > behind.txt
+          import pathlib, sys
+          sys.path.insert(0, ".")
+          from platformops.check_drift import collect
+          root = str(pathlib.Path.cwd())
+          for s in collect(f"{root}/platformops/registry.yaml", root):
+              if s.behind:
+                  print(s.name)
+          PY
+          while read -r name; do
+            [ -z "$name" ] && continue
+            path=$(python -c "import yaml,sys;print(next(s['path'] for s in yaml.safe_load(open('platformops/registry.yaml'))['services'] if s['name']=='$name'))")
+            ( cd "$path" && cruft update --skip-apply-ask --allow-untracked-files )
+          done < behind.txt
+
+      - name: Open a pull request with the updates
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: drift/template-update
+          title: "chore: bring registered services up to the current template"
+          body: |
+            Opened automatically by the drift workflow.
+
+            cruft update performs a three way merge. Review the diff: on a
+            service that has diverged from the template this can conflict, and
+            occasionally resolves badly. See docs/adr/0004-drift-strategy.md
+            for what this mechanism cannot do.
+          commit-message: "chore: cruft update registered services"
