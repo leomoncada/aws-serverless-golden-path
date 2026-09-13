@@ -1,0 +1,7 @@
+sandbox/
+.venv/
+__pycache__/
+*.tfstate*
+.terraform/
+.pytest_cache/
+.superpowers/
