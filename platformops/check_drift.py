@@ -37,6 +37,7 @@ def _commit_date(repo_root: str, sha: str) -> datetime | None:
 def collect(registry_path: str, repo_root: str) -> list[ServiceStatus]:
     registry = yaml.safe_load(pathlib.Path(registry_path).read_text()) or {}
     head = None
+    head_checked = False
     statuses: list[ServiceStatus] = []
 
     for entry in registry.get("services", []):
@@ -44,13 +45,24 @@ def collect(registry_path: str, repo_root: str) -> list[ServiceStatus]:
         if not cruft_file.is_file():
             continue
 
-        recorded = json.loads(cruft_file.read_text())["commit"]
-        if head is None:
+        recorded = json.loads(cruft_file.read_text()).get("commit", "")
+        if not head_checked:
             head = _template_head(repo_root)
+            head_checked = True
 
-        # If HEAD can't be determined, there's no reference to compare
-        # against; report the service as current rather than guessing.
-        behind = head is not None and not head.startswith(recorded) and not recorded.startswith(head)
+        # If HEAD can't be determined, or nothing was recorded, there is no
+        # reference to compare against. Report this as "unknown", not
+        # "current": those are not the same thing, and this dashboard
+        # exists to catch drift, not to explain away an inconclusive check.
+        if not recorded or head is None:
+            statuses.append(ServiceStatus(
+                name=entry["name"], repo=entry["repo"],
+                template_sha=recorded[:7] if recorded else "unknown",
+                behind=False, days_behind=0, unknown=True,
+            ))
+            continue
+
+        behind = not head.startswith(recorded) and not recorded.startswith(head)
         days = 0
         if behind:
             then = _commit_date(repo_root, recorded)
