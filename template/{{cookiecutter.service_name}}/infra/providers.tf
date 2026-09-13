@@ -39,3 +39,37 @@ provider "aws" {
     }
   }
 }
+
+# The CloudWatch metric alarms in alarms.tf are created through this second
+# configuration. It is the same contract as the one above, minus default_tags,
+# and it is used for both targets, so the alarms are identical on AWS and on
+# LocalStack. This is not a target-conditional resource.
+#
+# Why it exists: LocalStack 4's CloudWatch stores the Tags sent with
+# PutMetricAlarm on the alarm object itself and then cannot serialize the
+# DescribeAlarms response that contains it. terraform-provider-aws 6.x talks to
+# CloudWatch over the rpc-v2-cbor protocol, where that serialization failure is
+# a hard 500 InternalError rather than the warning the older query protocol
+# produces. Every read of a tagged alarm then fails, the provider retries it 25
+# times, and terraform apply hangs for minutes before giving up. Alarms carry no
+# cost allocation of their own, so dropping their tags is the cheapest way to
+# keep one set of Terraform working against both targets. See
+# docs/PARITY-NOTES.md.
+provider "aws" {
+  alias  = "untagged"
+  region = var.aws_region
+
+  access_key = var.aws_endpoint_url != "" ? "test" : null
+  secret_key = var.aws_endpoint_url != "" ? "test" : null
+
+  skip_credentials_validation = var.aws_endpoint_url != ""
+  skip_metadata_api_check     = var.aws_endpoint_url != ""
+  skip_requesting_account_id  = var.aws_endpoint_url != ""
+
+  dynamic "endpoints" {
+    for_each = var.aws_endpoint_url != "" ? [1] : []
+    content {
+      cloudwatch = var.aws_endpoint_url
+    }
+  }
+}
