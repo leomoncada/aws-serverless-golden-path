@@ -19,6 +19,6 @@ test:
 	python -m pytest tests -v
 
 lint:
-	terraform -chdir=infra fmt -check
+	terraform -chdir=infra fmt -check -recursive
 	terraform -chdir=infra validate
 	tflint --chdir=infra --recursive

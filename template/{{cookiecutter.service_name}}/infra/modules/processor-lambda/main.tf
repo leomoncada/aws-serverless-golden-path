@@ -6,6 +6,13 @@ data "archive_file" "app" {
   type        = "zip"
   source_dir  = "${path.root}/../app"
   output_path = "${path.root}/.build/app.zip"
+  excludes = [
+    "__pycache__",
+    "**/__pycache__",
+    "**/__pycache__/**",
+    "*.pyc",
+    "**/*.pyc",
+  ]
 }
 
 resource "aws_iam_role" "this" {
@@ -70,7 +77,7 @@ resource "aws_lambda_function" "this" {
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.this]
+  depends_on = [aws_cloudwatch_log_group.this, aws_iam_role_policy.this]
 }
 
 resource "aws_lambda_permission" "s3" {
