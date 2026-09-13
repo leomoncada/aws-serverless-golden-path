@@ -51,10 +51,20 @@ provider "aws" {
 # CloudWatch over the rpc-v2-cbor protocol, where that serialization failure is
 # a hard 500 InternalError rather than the warning the older query protocol
 # produces. Every read of a tagged alarm then fails, the provider retries it 25
-# times, and terraform apply hangs for minutes before giving up. Alarms carry no
-# cost allocation of their own, so dropping their tags is the cheapest way to
-# keep one set of Terraform working against both targets. See
-# docs/PARITY-NOTES.md.
+# times, and terraform apply hangs for minutes before giving up.
+#
+# What it costs. This works around an emulator bug; it is not a design
+# preference. The three alarms lose Service, Owner and ManagedBy, so they do not
+# appear under this service in cost allocation reports, and nothing on them
+# names the team that owns them. Metric alarms are billed, so that allocation
+# gap is real and not free. In an account that enforces mandatory tags through
+# an SCP, these three alarms will fail to create until the alias is removed, and
+# the real-AWS path has never been exercised here, so that would surface on
+# first use.
+#
+# Revert condition: when LocalStack serializes DescribeAlarms for a tagged
+# alarm, delete this provider and the three "provider = aws.untagged" lines in
+# alarms.tf. See docs/PARITY-NOTES.md.
 provider "aws" {
   alias  = "untagged"
   region = var.aws_region

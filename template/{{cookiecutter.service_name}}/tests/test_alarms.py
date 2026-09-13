@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 def _alarm(cloudwatch, name):
     found = cloudwatch.describe_alarms(AlarmNames=[name])["MetricAlarms"]
     assert found, f"alarm {name} does not exist"
@@ -32,13 +34,21 @@ def test_absence_of_signal_alarm_fires_with_no_data(cloudwatch):
         "INSUFFICIENT_DATA"
     )
 
-    # With nothing in the evaluation window the alarm has to be firing. Whether
-    # the window is empty is read from the alarm's own last evaluation rather
-    # than assumed: the integration tests invoke the processor, so a second run
-    # of the suite inside the alarm's five minute period sees real datapoints
-    # and a correctly quiet alarm.
-    if not _recent_datapoints(alarm):
-        assert alarm["StateValue"] == "ALARM", (
-            "alarm should already be in ALARM: no datapoints have been published "
-            "and missing data is treated as breaching"
+    # The firing assertion below only means anything while the alarm's
+    # evaluation window is genuinely empty. The integration tests in this suite
+    # invoke the processor, so within the alarm's five minute period there are
+    # real datapoints and the alarm is correctly quiet. Skip loudly rather than
+    # pass quietly: a green result here has to mean the assertion ran.
+    recent = _recent_datapoints(alarm)
+    if recent:
+        pytest.skip(
+            f"the processor was invoked inside the alarm's evaluation window "
+            f"(recentDatapoints={recent}), so the absence of signal cannot be "
+            f"checked right now. Rerun after a fresh apply, or once the alarm's "
+            f"period has passed with no invocations."
         )
+
+    assert alarm["StateValue"] == "ALARM", (
+        "alarm should already be in ALARM: no datapoints have been published "
+        "and missing data is treated as breaching"
+    )
