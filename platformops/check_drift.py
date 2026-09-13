@@ -10,16 +10,29 @@ from .drift_report import ServiceStatus, build_report
 
 
 def _template_head(repo_root: str) -> str | None:
-    # In production repo_root is this checked-out template repo, so this
-    # always succeeds. In a unit test repo_root can be a bare tmp_path with
-    # no .git at all; don't crash on that, just report "unknown".
+    # A service is behind only when the TEMPLATE has moved, not when any
+    # commit lands in this repository. Comparing against repo HEAD would
+    # make every registered service "behind" the moment an unrelated commit
+    # (a README edit, a fix to this very module) merges, which is not what
+    # drift means and would make DRIFT.md restate a new "days behind" on
+    # every commit regardless of whether template/ changed. So this looks
+    # for the newest commit that actually touched template/, the same
+    # pathspec the Makefile's drift-demo target already uses to find the
+    # template's *oldest* touching commit (`git log --format=%H -- template`).
+    #
+    # In production repo_root is this checked-out platform repo, so this
+    # usually succeeds. In a unit test repo_root can be a bare tmp_path with
+    # no .git at all, or a repo where nothing has ever touched template/
+    # (empty stdout, exit 0, not an error); don't crash on either case, just
+    # report "unknown".
     result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo_root,
+        ["git", "log", "-1", "--format=%H", "--", "template"], cwd=repo_root,
         capture_output=True, text=True,
     )
     if result.returncode != 0:
         return None
-    return result.stdout.strip()
+    sha = result.stdout.strip()
+    return sha or None
 
 
 def _commit_date(repo_root: str, sha: str) -> datetime | None:
@@ -50,10 +63,11 @@ def collect(registry_path: str, repo_root: str) -> list[ServiceStatus]:
             head = _template_head(repo_root)
             head_checked = True
 
-        # If HEAD can't be determined, or nothing was recorded, there is no
-        # reference to compare against. Report this as "unknown", not
-        # "current": those are not the same thing, and this dashboard
-        # exists to catch drift, not to explain away an inconclusive check.
+        # If the template's latest commit can't be determined, or nothing
+        # was recorded, there is no reference to compare against. Report
+        # this as "unknown", not "current": those are not the same thing,
+        # and this dashboard exists to catch drift, not to explain away an
+        # inconclusive check.
         if not recorded or head is None:
             statuses.append(ServiceStatus(
                 name=entry["name"], repo=entry["repo"],

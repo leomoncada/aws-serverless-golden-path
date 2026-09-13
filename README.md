@@ -155,7 +155,7 @@ aws-serverless-golden-path/
 │       ├── infra/                         Lambda, S3, DynamoDB, SQS DLQ, alarms
 │       ├── app/                           Python handler, structured JSON logging
 │       ├── tests/                         contract, integration and alarm tests
-│       ├── docs/runbooks/                 deploy, first-aws-deploy
+│       ├── docs/runbooks/                 first-aws-deploy
 │       ├── .github/workflows/             ci.yml, deploy-aws.yml
 │       ├── Makefile                       the same targets CI calls
 │       └── catalog-info.yaml

@@ -72,7 +72,8 @@ def test_a_service_with_no_cruft_file_is_skipped_not_crashed(tmp_path):
 
 def test_a_service_pinned_to_the_current_head_is_not_behind(tmp_path):
     _init_repo(tmp_path)
-    (tmp_path / "README.md").write_text("template v1\n")
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("{}\n")
     head = _commit(tmp_path, "template commit", when=datetime(2020, 1, 1, tzinfo=UTC))
 
     svc = tmp_path / "examples" / "orders-ingest"
@@ -90,10 +91,11 @@ def test_a_service_pinned_to_an_earlier_commit_is_behind_by_its_recorded_age(tmp
     _init_repo(tmp_path)
 
     old_date = datetime(2020, 1, 1, tzinfo=UTC)
-    (tmp_path / "README.md").write_text("template v1\n")
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("{}\n")
     old_sha = _commit(tmp_path, "old template commit", when=old_date)
 
-    (tmp_path / "README.md").write_text("template v2\n")
+    (tmp_path / "template" / "cookiecutter.json").write_text('{"v": 2}\n')
     _commit(tmp_path, "newer template commit", when=datetime(2020, 6, 1, tzinfo=UTC))
 
     svc = tmp_path / "examples" / "orders-ingest"
@@ -110,9 +112,37 @@ def test_a_service_pinned_to_an_earlier_commit_is_behind_by_its_recorded_age(tmp
     assert statuses[0].days_behind == expected_days
 
 
+def test_a_commit_that_only_touches_docs_does_not_make_a_service_behind(tmp_path):
+    # This is the semantics this whole module exists to get right: a
+    # service is behind only when the TEMPLATE has moved, never merely
+    # because some other commit landed in the platform repository. A commit
+    # that only touches docs/ (a README edit, an ADR) must leave every
+    # registered service exactly as current (or behind) as it was before
+    # that commit, not newly behind.
+    _init_repo(tmp_path)
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("{}\n")
+    template_sha = _commit(tmp_path, "template commit", when=datetime(2020, 1, 1, tzinfo=UTC))
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "NOTES.md").write_text("unrelated docs change\n")
+    _commit(tmp_path, "docs only commit", when=datetime(2024, 1, 1, tzinfo=UTC))
+
+    svc = tmp_path / "examples" / "orders-ingest"
+    svc.mkdir(parents=True)
+    (svc / ".cruft.json").write_text(json.dumps({"commit": template_sha}))
+    registry = _registry(tmp_path, "orders-ingest", "examples/orders-ingest")
+
+    statuses = collect(str(registry), str(tmp_path))
+    assert statuses == [
+        ServiceStatus("orders-ingest", "o/r", template_sha[:7], behind=False, days_behind=0),
+    ]
+
+
 def test_an_unresolvable_head_is_reported_unknown_not_current(tmp_path):
-    # tmp_path is deliberately NOT a git repository, so the template HEAD
-    # cannot be determined at all. This must not be reported as "current".
+    # tmp_path is deliberately NOT a git repository, so the template's
+    # latest commit cannot be determined at all. This must not be reported
+    # as "current".
     svc = tmp_path / "examples" / "orders-ingest"
     svc.mkdir(parents=True)
     (svc / ".cruft.json").write_text(json.dumps({"commit": "abc1234567890"}))
