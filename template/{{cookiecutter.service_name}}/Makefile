@@ -15,8 +15,20 @@ apply: init
 destroy:
 	terraform -chdir=infra destroy -auto-approve -input=false -var=aws_endpoint_url=$(ENDPOINT)
 
+# Two sessions, deliberately, and the order matters.
+#
+# tests/test_alarms.py asserts the no-invocations alarm is in ALARM, which is
+# only true while nothing has invoked the function inside the alarm's five
+# minute window. tests/test_integration.py invokes it. Alphabetical
+# collection happens to put alarms first today, which is luck, not a
+# guarantee: a new tests/test_a*.py, pytest-randomly, or `pytest -k` in a
+# different order all break it, and the alarm assertion is the one this
+# service's observability claim rests on. So it runs first, on its own, here
+# where the order is visible, and it fails rather than skips if the window is
+# not empty.
 test:
-	python -m pytest tests -v
+	python -m pytest tests/test_alarms.py -v
+	python -m pytest tests -v --ignore=tests/test_alarms.py
 
 lint:
 	terraform -chdir=infra fmt -check -recursive
@@ -24,11 +36,15 @@ lint:
 	tflint --chdir=infra --recursive
 
 .PHONY: up down ci
+# One command, and nothing to install beyond Docker. The tfstate bucket is
+# created by localstack/init/ready.d/01-tfstate-bucket.sh inside the
+# container, and docker-compose.yml's healthcheck is a head-bucket on it, so
+# `--wait` returns only once the bucket exists and gives up after a bounded
+# number of retries. This used to be an `until aws s3api head-bucket` loop
+# here, which needed the AWS CLI (undeclared in the README, absent on plenty
+# of laptops) and never gave up: without the CLI it hung silently forever.
 up:
 	docker compose up -d --wait
-	until aws --endpoint-url=$(ENDPOINT) s3api head-bucket --bucket tfstate 2>/dev/null; do \
-		aws --endpoint-url=$(ENDPOINT) s3api create-bucket --bucket tfstate || sleep 2; \
-	done
 
 down:
 	docker compose down -v

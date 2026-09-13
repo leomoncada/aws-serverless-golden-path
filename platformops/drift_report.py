@@ -1,7 +1,12 @@
-"""Builds DRIFT.md from cruft check results.
+"""Renders DRIFT.md from the ServiceStatus list that check_drift produces.
 
-The number this produces is the platform team's product metric. Without it,
-"we have a golden path" is unfalsifiable.
+Nothing here calls cruft. "Days behind" is the distance in days between a
+service's template version and the current template version, both defined in
+docs/TEMPLATE-VERSION.md. It is not a distance from today, so this file's
+output changes when the template moves and at no other time.
+
+The mean lag this produces is the platform team's product metric. Without
+it, "we have a golden path" is unfalsifiable.
 """
 from dataclasses import dataclass
 
