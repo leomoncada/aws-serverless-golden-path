@@ -3,6 +3,7 @@ resource "aws_sns_topic" "alarms" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  provider            = aws.untagged
   alarm_name          = "${var.service_name}-lambda-errors"
   namespace           = "AWS/Lambda"
   metric_name         = "Errors"
@@ -18,6 +19,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
+  provider            = aws.untagged
   alarm_name          = "${var.service_name}-dlq-not-empty"
   namespace           = "AWS/SQS"
   metric_name         = "ApproximateNumberOfMessagesVisible"
@@ -36,6 +38,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
 # treat_missing_data = "missing" this alarm would sit in INSUFFICIENT_DATA
 # during precisely the outage it exists to catch.
 resource "aws_cloudwatch_metric_alarm" "no_invocations" {
+  provider            = aws.untagged
   alarm_name          = "${var.service_name}-no-invocations"
   namespace           = "AWS/Lambda"
   metric_name         = "Invocations"

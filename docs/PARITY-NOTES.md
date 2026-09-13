@@ -65,3 +65,47 @@ Recording both so this register does not overstate how much diverges.
   `unquote_plus` call is defensive and not currently exercised by any
   observed divergence.
   No workaround needed.
+
+## Task 5: alarms and the absence-of-signal test
+
+- Expected: `treat_missing_data = "breaching"` might be stored but not acted
+  on, leaving the `<service>-no-invocations` alarm in INSUFFICIENT_DATA
+  locally and making the one test that justifies this task unable to
+  distinguish a correct alarm from the broken CloudWatch default.
+  Observed: LocalStack evaluates missing data exactly as documented. With no
+  `AWS/Lambda Invocations` datapoints published, the alarm reaches
+  `StateValue` `ALARM` within one evaluation period with `StateReason`
+  "Threshold Crossed: no datapoints were received for 1 period and 1 missing
+  datapoint was treated as [Breaching].", and the `-lambda-errors` alarm next
+  to it, which keeps the CloudWatch default, sits in INSUFFICIENT_DATA with
+  "Unchecked: Initial alarm creation". The divergence the task exists to catch
+  is therefore visible locally.
+  No workaround needed.
+
+- Expected: nothing in particular about tags on alarms. The provider's
+  `default_tags` had applied cleanly to every resource in Tasks 1 to 4.
+  Observed: `terraform apply` hung for minutes on all three
+  `aws_cloudwatch_metric_alarm` resources ("Still creating...") and never
+  finished. LocalStack keeps the `Tags` sent with `PutMetricAlarm` on the
+  stored alarm object and then fails to serialize the `DescribeAlarms`
+  response that contains it: `exception during call chain: An unknown error
+  occurred when trying to serialize the response` and
+  `AWS cloudwatch.DescribeAlarms => 500 (InternalError)`.
+  terraform-provider-aws 6.64.0 speaks to CloudWatch over the rpc-v2-cbor
+  protocol (`POST /service/GraniteServiceVersion20100801/operation/DescribeAlarms`,
+  `smithy-protocol: rpc-v2-cbor`), where that failure is a hard 500; the
+  older query protocol the AWS CLI still uses turns the same condition into a
+  logged warning ("Response object MetricAlarm contains a member which is not
+  specified: Tags") and a 200, which is why `aws cloudwatch describe-alarms`
+  succeeds against the very alarm the provider cannot read. The provider then
+  retries the read 25 times with backoff, so the create never returns. Reduced
+  to a two resource repro: the same alarm applies in 0s with no tags and fails
+  with `tags = { Service = "zz" }`.
+  Worked around: the three alarms are created through the `aws.untagged`
+  provider configuration declared in `infra/providers.tf`, which is the same
+  contract as the default one minus `default_tags`. It is used for both
+  targets, so the alarms are identical on AWS and on LocalStack, and no
+  `var.aws_endpoint_url` branch was added outside `providers.tf`. The cost is
+  that alarms carry no `Service` / `Owner` / `ManagedBy` tags on real AWS
+  either. If LocalStack fixes its CloudWatch serializer, delete the
+  `aws.untagged` provider and the three `provider = aws.untagged` lines.
