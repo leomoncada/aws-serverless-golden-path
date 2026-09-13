@@ -1,0 +1,9 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: orders-ingest
+  description: A serverless ingestion service
+spec:
+  type: service
+  lifecycle: experimental
+  owner: platform
