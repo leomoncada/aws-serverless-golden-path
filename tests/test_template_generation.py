@@ -44,3 +44,10 @@ def test_generated_compose_pins_the_localstack_image(generated):
     compose = yaml.safe_load((generated / "docker-compose.yml").read_text())
     image = compose["services"]["localstack"]["image"]
     assert image == "localstack/localstack:4", "must be pinned; :latest needs a licence token"
+
+
+def test_make_demo_exists_and_excludes_the_portal():
+    body = (REPO / "Makefile").read_text()
+    assert "demo:" in body
+    demo_line = [l for l in body.splitlines() if l.startswith("demo:")][0]
+    assert "portal" not in demo_line, "portal needs Node and must not be in demo"

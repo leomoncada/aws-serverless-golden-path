@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.8
+      - uses: terraform-linters/setup-tflint@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      # tests/test_harness.py needs LocalStack up and the tfstate bucket
+      # present before pytest can even collect a passing run.
+      - run: make up
+      - run: python -m pytest tests -v
+      - run: make demo
