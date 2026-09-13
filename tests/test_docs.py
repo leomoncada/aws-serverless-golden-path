@@ -1,3 +1,4 @@
+import re
 import pathlib
 import subprocess
 
@@ -71,3 +72,25 @@ def test_committed_drift_md_matches_what_the_tool_currently_produces():
         "re-clone with full history. CI checks out with fetch-depth: 0 for "
         "this reason. See docs/TEMPLATE-VERSION.md."
     )
+
+
+def test_no_absolute_local_paths_in_committed_files():
+    """A generated .cruft.json records where it was generated from. Generating
+    from a local checkout writes an absolute path that only resolves on one
+    machine, and it comes back every time the example is regenerated, so the
+    guard lives here rather than in a one-off correction."""
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=REPO, check=True, capture_output=True
+    ).stdout.split(b"\0")
+    offenders = []
+    for raw in tracked:
+        if not raw:
+            continue
+        path = REPO / raw.decode()
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+        if re.search(r"/(Users|home)/[a-z][a-z0-9_-]*/", body):
+            offenders.append(raw.decode())
+    assert not offenders, f"absolute local paths committed in: {offenders}"
