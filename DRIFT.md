@@ -5,4 +5,4 @@ Mean lag: 0.0 days.
 
 | Service | Repository | Template | Status | Days behind |
 |---|---|---|---|---|
-| orders-ingest | `leomoncada/aws-serverless-golden-path` | `f21efc4` | current | 0 |
+| orders-ingest | `leomoncada/aws-serverless-golden-path` | `cf2c20b` | current | 0 |
