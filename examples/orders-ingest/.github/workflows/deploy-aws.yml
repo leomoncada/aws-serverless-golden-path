@@ -1,0 +1,49 @@
+# Manual only, and never executed in this repository. It exists so the path to
+# AWS is code rather than a promise. See docs/runbooks/first-aws-deploy.md.
+name: deploy-aws
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type the service name to confirm a real AWS deploy
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.confirm == 'orders-ingest' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.8
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: "us-east-1"
+      # `make apply-aws` is the human-facing target: it runs `terraform apply`
+      # with no -auto-approve so a person typing at a real terminal gets the
+      # usual "yes" prompt before anything changes. That prompt needs a TTY,
+      # which this job does not have, so CI cannot call that target directly.
+      # Instead: plan to a file, then apply exactly that file. Applying a
+      # saved plan does not re-prompt for approval (the plan you are applying
+      # was already fixed when it was written), so this needs neither
+      # -auto-approve nor a TTY. The human checkpoint for this path is
+      # upstream of these steps: the workflow_dispatch confirmation input
+      # above, and the "production" GitHub environment, which must have a
+      # required-reviewers protection rule configured so the job itself
+      # cannot start until someone approves it. Without that environment
+      # protection rule configured, this workflow has no human gate at all;
+      # see docs/runbooks/first-aws-deploy.md.
+      - name: terraform init
+        run: terraform -chdir=infra init -input=false -backend-config=env/aws.backend.hcl
+      - name: terraform plan
+        run: terraform -chdir=infra plan -input=false -out=tfplan
+      - name: terraform apply (the plan just reviewed above)
+        run: terraform -chdir=infra apply -input=false tfplan

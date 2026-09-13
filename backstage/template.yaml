@@ -41,8 +41,8 @@ spec:
     # Requires @backstage/plugin-scaffolder-backend-module-cookiecutter in the
     # backend, plus cookiecutter on PATH or a Docker daemon. That cost is
     # accepted deliberately: it buys the drift tooling (cruft) that Backstage's
-    # native fetch:template does not have. See the ADR in docs/DESIGN.md
-    # ("cookiecutter over Backstage's native fetch:template").
+    # native fetch:template does not have. See
+    # docs/adr/0002-cookiecutter-over-fetch-template.md.
     - id: fetch
       name: Generate from the golden path template
       action: fetch:cookiecutter
