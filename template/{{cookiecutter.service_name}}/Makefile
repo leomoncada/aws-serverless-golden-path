@@ -36,7 +36,17 @@ down:
 # LocalStack must be reachable before `terraform init` can configure the S3
 # backend (it dials the tfstate bucket at apply-time init), and `lint`'s
 # `terraform validate` / `tflint` both need an initialised working directory.
-# So: bring LocalStack up, initialise, then lint, then the rest. `apply`
-# still declares `init` as its own prerequisite (harmless: terraform init is
-# idempotent), so this does not skip any existing target's contract.
-ci: up init lint apply test destroy down
+# So: bring LocalStack up, initialise, then lint, then the rest.
+#
+# `destroy` and `down` always run, even if an earlier step (lint, apply, or
+# test) fails, so a failed run never leaves infrastructure applied or
+# LocalStack running for the next invocation; `ci` still exits non-zero when
+# a step failed. `up init lint apply test` is one `make` invocation, so
+# `init` (an explicit goal and also `apply`'s prerequisite) still runs once.
+ci:
+	@set +e; \
+	$(MAKE) up init lint apply test; \
+	rc=$$?; \
+	$(MAKE) destroy; \
+	$(MAKE) down; \
+	exit $$rc
