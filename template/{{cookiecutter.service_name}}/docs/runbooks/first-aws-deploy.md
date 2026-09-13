@@ -44,7 +44,32 @@ is not effectively free.
    `repo:<owner>/{{cookiecutter.service_name}}:environment:production`, and
    attach a policy allowing only the resources in `infra/`.
 3. **Set the secret.** Repository secret `AWS_DEPLOY_ROLE_ARN`.
-4. **Deploy into a throwaway environment.** `make apply-aws`.
+4. **Configure the human gate on the `production` environment.** In the
+   repository's Settings -> Environments -> `production`, add a
+   required-reviewers protection rule. This is the actual approval checkpoint
+   for the `deploy-aws` workflow: the `workflow_dispatch` confirmation input
+   only guards against a mistyped run, and the workflow itself plans and then
+   applies a saved plan file without a further interactive prompt (see
+   "Two ways to run this" below), so without this rule configured the
+   workflow has no human gate at all.
+5. **Deploy into a throwaway environment.** Either run `make apply-aws` from
+   your own terminal, or dispatch the `deploy-aws` workflow. See "Two ways to
+   run this" below for how the two differ.
+
+## Two ways to run this
+
+- **`make apply-aws`, from a terminal.** Plain `terraform apply`, no
+  `-auto-approve`. Terraform shows the plan and waits for you to type `yes`.
+  This is the target for a person sitting at a keyboard, and it needs a TTY,
+  so it cannot be called this way from CI.
+- **The `deploy-aws` workflow.** CI has no TTY, so it cannot use the same
+  interactive prompt. Instead it runs `terraform plan -out=tfplan` and then
+  `terraform apply tfplan`: applying a saved plan file does not re-prompt for
+  approval, because the plan being applied was already fixed when it was
+  written, not re-derived at apply time. The human checkpoint for this path
+  is upstream of Terraform entirely: the required-reviewers rule on the
+  `production` environment from step 4, plus the typed confirmation input on
+  the workflow dispatch.
 
 ## What to verify, because local never proved it
 

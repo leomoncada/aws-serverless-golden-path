@@ -6,6 +6,31 @@ TPL = REPO / "template/{{cookiecutter.service_name}}"
 def test_no_infrastructure_is_conditional_on_the_target():
     # The whole AWS path contract: local must exercise the same resources AWS
     # would get. A count or for_each keyed on the endpoint variable breaks it.
+    #
+    # This is a narrow, line-oriented regex tripwire, not a static-analysis
+    # guarantee. It reliably catches:
+    #   - a `count = ...` or `for_each = ...` argument, on a single line,
+    #     whose expression directly references `var.aws_endpoint_url`,
+    #     anywhere under infra/ other than providers.tf.
+    #
+    # It does NOT catch, and a human reviewer still has to look for:
+    #   - the same condition split across multiple lines (this only ever
+    #     inspects one line at a time);
+    #   - indirection through a `local` value, or through a renamed/aliased
+    #     variable, that is itself derived from aws_endpoint_url elsewhere
+    #     (e.g. `count = local.is_local ? 1 : 0` where `is_local` is computed
+    #     from the endpoint far away from the count/for_each line);
+    #   - any conditional mechanism other than count/for_each, such as a
+    #     module `source` chosen by target, a `depends_on` that differs by
+    #     target, or a provider alias selected by target outside the two
+    #     sanctioned blocks in providers.tf;
+    #   - anything written inside providers.tf, which is excluded by design
+    #     because it legitimately contains this variable twice.
+    #
+    # A passing run here means "no easy regression was introduced," not
+    # "provably no target-conditional infrastructure exists." Treat it as a
+    # tripwire that narrows what a reviewer has to look for, not a
+    # replacement for looking.
     offenders = []
     for tf in (TPL / "infra").rglob("*.tf"):
         if tf.name == "providers.tf":
