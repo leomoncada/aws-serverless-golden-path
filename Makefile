@@ -15,11 +15,21 @@ SANDBOX ?= sandbox
 SERVICE ?= orders-ingest
 
 .PHONY: new
+# cruft records the path it generated from in .cruft.json. Generating from `.`
+# writes whatever absolute path this checkout happens to live at, which then gets
+# committed with examples/ and only works on that one machine. Generate locally
+# for speed, then rewrite the recorded origin to the canonical URL.
+TEMPLATE_ORIGIN ?= https://github.com/leomoncada/aws-serverless-golden-path
+
 new: ## Generate a service from the template into $(SANDBOX)/$(SERVICE)
 	rm -rf $(SANDBOX)/$(SERVICE)
 	mkdir -p $(SANDBOX)
 	cruft create . --directory template --no-input --output-dir $(SANDBOX) \
 		--extra-context '{"service_name": "$(SERVICE)"}'
+	@python3 -c "import json,sys,pathlib; \
+f=pathlib.Path('$(SANDBOX)/$(SERVICE)/.cruft.json'); d=json.loads(f.read_text()); \
+d['template']='$(TEMPLATE_ORIGIN)'; d.setdefault('context',{}).setdefault('cookiecutter',{})['_template']='$(TEMPLATE_ORIGIN)'; \
+f.write_text(json.dumps(d,indent=2)+chr(10))"
 
 .PHONY: init lint apply test destroy demo drift-demo
 init: ## Initialise the generated sandbox service's Terraform against LocalStack
