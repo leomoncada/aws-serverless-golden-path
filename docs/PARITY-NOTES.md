@@ -114,3 +114,30 @@ Recording both so this register does not overstate how much diverges.
   that path has never been exercised here. If LocalStack fixes its CloudWatch
   serializer, delete the `aws.untagged` provider and the three
   `provider = aws.untagged` lines.
+
+## Task 6: generated CI workflow and cookiecutter/Jinja escaping
+
+- This is not a LocalStack divergence but the most common way this template
+  itself breaks, so it is recorded here rather than left to be rediscovered.
+  Cookiecutter renders every file under `template/{{cookiecutter.service_name}}`
+  through Jinja2, including `.github/workflows/ci.yml`. GitHub Actions
+  expressions use the exact same `${{ ... }}` delimiter as Jinja's variable
+  syntax, so any unescaped Actions expression in a template file (for example
+  `${{ github.ref }}` in a `concurrency.group` key) is interpreted by
+  cookiecutter as one of its own template variables. Since `github` and
+  `ref` are not defined in `cookiecutter.json`, generation fails outright with
+  a Jinja `UndefinedError`; a variable that happens to share a name with a
+  real cookiecutter key would instead render silently wrong.
+  Fix: inside any template file, escape each Actions expression as
+  `${{ '{{' }} <expression> {{ '}}' }}`. Cookiecutter evaluates the two
+  Jinja literals `'{{'` and `'}}'` and concatenates them around the
+  expression text, so the file cookiecutter emits contains a plain,
+  unescaped `${{ <expression> }}` that GitHub Actions then parses normally.
+  Verified for this task: `template/{{cookiecutter.service_name}}/.github/workflows/ci.yml`
+  contains `group: ci-${{ '{{' }} github.ref {{ '}}' }}` in the template, and
+  the generated `sandbox/orders-ingest/.github/workflows/ci.yml` contains the
+  unescaped `group: ci-${{ github.ref }}`.
+  Anyone adding a new workflow (or any other Actions/Jinja-colliding syntax)
+  to the template must apply this escaping to every `${{ ... }}` expression,
+  not just `github.ref`, or `cruft create` / `make new` will fail or mangle
+  the file.
