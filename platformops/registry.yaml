@@ -1,0 +1,6 @@
+# Services generated from this template. In a real organisation this would be
+# the Backstage catalog; here it is a file, and the README says so.
+services:
+  - name: orders-ingest
+    repo: leomoncada/aws-serverless-golden-path
+    path: examples/orders-ingest
