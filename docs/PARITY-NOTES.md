@@ -106,6 +106,11 @@ Recording both so this register does not overstate how much diverges.
   contract as the default one minus `default_tags`. It is used for both
   targets, so the alarms are identical on AWS and on LocalStack, and no
   `var.aws_endpoint_url` branch was added outside `providers.tf`. The cost is
-  that alarms carry no `Service` / `Owner` / `ManagedBy` tags on real AWS
-  either. If LocalStack fixes its CloudWatch serializer, delete the
-  `aws.untagged` provider and the three `provider = aws.untagged` lines.
+  real and it falls on the AWS path: the three alarms carry no `Service` /
+  `Owner` / `ManagedBy` tags there either, so they do not appear under this
+  service in cost allocation (metric alarms are billed) and nothing on them
+  names the owning team. In an account that enforces mandatory tags through an
+  SCP these three alarms will fail to create until the alias is removed, and
+  that path has never been exercised here. If LocalStack fixes its CloudWatch
+  serializer, delete the `aws.untagged` provider and the three
+  `provider = aws.untagged` lines.
