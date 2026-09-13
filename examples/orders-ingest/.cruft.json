@@ -1,0 +1,16 @@
+{
+  "template": "https://github.com/leomoncada/aws-serverless-golden-path",
+  "commit": "5ac99ff826033e885150ff7b319be6e8e7a4388d",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "service_name": "orders-ingest",
+      "owner_team": "platform",
+      "description": "A serverless ingestion service",
+      "python_runtime": "python3.12",
+      "aws_region": "us-east-1",
+      "_template": "https://github.com/leomoncada/aws-serverless-golden-path"
+    }
+  },
+  "directory": "template"
+}
