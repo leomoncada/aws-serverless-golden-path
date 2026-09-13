@@ -51,8 +51,14 @@ ci:
 	$(MAKE) down; \
 	exit $$rc
 
+# apply-aws is the human-facing entry point: run it from your own terminal,
+# where Terraform can prompt and a person types "yes" before anything real
+# changes. It deliberately has no -auto-approve and no -input=false on the
+# apply step, so it needs a TTY and cannot be called this way from CI; see
+# deploy-aws.yml for the non-interactive path, which plans and applies a
+# saved plan file instead of skipping approval outright.
 .PHONY: apply-aws
-apply-aws: ## Provision against a real AWS account. Never run by CI. Costs money.
+apply-aws: ## Provision against a real AWS account. Interactive; never run by CI. Costs money.
 	@echo "This targets real AWS. Read docs/runbooks/first-aws-deploy.md first."
 	terraform -chdir=infra init -input=false -backend-config=env/aws.backend.hcl
-	terraform -chdir=infra apply -input=false
+	terraform -chdir=infra apply
