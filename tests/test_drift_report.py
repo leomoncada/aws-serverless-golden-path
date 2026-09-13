@@ -26,3 +26,23 @@ def test_report_states_the_mean_lag():
 def test_empty_registry_produces_a_report_rather_than_crashing():
     md = build_report([])
     assert "No services" in md
+
+def test_an_unknown_entry_is_shown_as_unknown_not_current():
+    md = build_report([
+        ServiceStatus("a", "o/a", "sha1", False, 0, unknown=True),
+    ])
+    row = [line for line in md.splitlines() if line.startswith("| a ")]
+    assert row, f"no table row for service 'a' in:\n{md}"
+    assert "unknown" in row[0]
+    assert "current" not in row[0]
+
+def test_unknown_entries_are_excluded_from_the_mean_lag_not_counted_as_zero():
+    md = build_report([
+        ServiceStatus("a", "o/a", "sha1", True, 10),
+        ServiceStatus("b", "o/b", "sha2", False, 0, unknown=True),
+    ])
+    # Folding the unknown entry in as 0 days would give a mean of 5.0 and
+    # understate drift; excluding it gives 10.0, the true mean of what could
+    # actually be evaluated.
+    assert "10.0" in md
+    assert "5.0" not in md
