@@ -25,22 +25,11 @@ jobs:
         run: python -m platformops.check_drift
 
       - name: Update registered services that are behind
-        run: |
-          set -euo pipefail
-          python - <<'PY' > behind.txt
-          import pathlib, sys
-          sys.path.insert(0, ".")
-          from platformops.check_drift import collect
-          root = str(pathlib.Path.cwd())
-          for s in collect(f"{root}/platformops/registry.yaml", root):
-              if s.behind:
-                  print(s.name)
-          PY
-          while read -r name; do
-            [ -z "$name" ] && continue
-            path=$(python -c "import yaml,sys;print(next(s['path'] for s in yaml.safe_load(open('platformops/registry.yaml'))['services'] if s['name']=='$name'))")
-            ( cd "$path" && cruft update --skip-apply-ask --allow-untracked-files )
-          done < behind.txt
+        # Runs entirely in Python: cruft update is invoked with a list
+        # argument vector (platformops/apply_drift_updates.py), so no
+        # registry data (a service name, a path) is ever interpolated into
+        # a shell command.
+        run: python -m platformops.apply_drift_updates
 
       - name: Open a pull request with the updates
         uses: peter-evans/create-pull-request@v7
