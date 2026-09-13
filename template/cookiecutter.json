@@ -1,0 +1,7 @@
+{
+  "service_name": "my-service",
+  "owner_team": "platform",
+  "description": "A serverless ingestion service",
+  "python_runtime": "python3.12",
+  "aws_region": "us-east-1"
+}
