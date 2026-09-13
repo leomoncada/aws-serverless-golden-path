@@ -43,3 +43,22 @@ def test_the_example_service_is_committed_and_registered():
     assert (REPO / "examples/orders-ingest/.cruft.json").is_file()
     registry = (REPO / "platformops/registry.yaml").read_text()
     assert "examples/orders-ingest" in registry
+
+
+def test_committed_drift_md_matches_what_the_tool_currently_produces():
+    # DRIFT.md is generated, not hand-maintained, and nothing regenerates it
+    # automatically on commit. Without this guard it can silently go stale
+    # the moment the registry or the template changes and nobody happens to
+    # re-run `python -m platformops.check_drift` before committing. This is
+    # the same shape as every other defence in this suite: the committed
+    # artefact must match what the tool actually produces right now.
+    from platformops.check_drift import collect
+    from platformops.drift_report import build_report
+
+    statuses = collect(str(REPO / "platformops/registry.yaml"), str(REPO))
+    expected = build_report(statuses)
+    actual = (REPO / "DRIFT.md").read_text()
+    assert actual == expected, (
+        "DRIFT.md does not match `python -m platformops.check_drift` output; "
+        "regenerate it before committing"
+    )

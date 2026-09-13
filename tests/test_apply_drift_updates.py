@@ -38,10 +38,14 @@ def _commit(repo_root, message, when):
 
 def test_apply_updates_runs_cruft_update_only_for_services_behind_via_argv(tmp_path, monkeypatch):
     _init_repo(tmp_path)
-    (tmp_path / "README.md").write_text("v1\n")
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("v1\n")
     old_sha = _commit(tmp_path, "old", when=datetime(2020, 1, 1, tzinfo=UTC))
 
-    (tmp_path / "README.md").write_text("v2\n")
+    # check_drift compares against the newest commit that touched template/,
+    # not repo HEAD (a service is behind only when the TEMPLATE moved), so
+    # the fixture's "new" commit has to actually touch template/ too.
+    (tmp_path / "template" / "cookiecutter.json").write_text("v2\n")
     head = _commit(tmp_path, "new (head)", when=datetime(2020, 6, 1, tzinfo=UTC))
 
     behind_dir = tmp_path / "examples" / "behind-svc"
