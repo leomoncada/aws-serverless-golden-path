@@ -52,6 +52,12 @@ def test_committed_drift_md_matches_what_the_tool_currently_produces():
     # re-run `python -m platformops.check_drift` before committing. This is
     # the same shape as every other defence in this suite: the committed
     # artefact must match what the tool actually produces right now.
+    #
+    # "Right now" is safe to assert against a committed file only because
+    # nothing the tool produces depends on the clock: days_behind is the
+    # distance between two commits, not the distance from today. It used to
+    # be the latter, which would have turned this guard into a daily CI
+    # failure as soon as the template moved. See docs/TEMPLATE-VERSION.md.
     from platformops.check_drift import collect
     from platformops.drift_report import build_report
 
@@ -60,5 +66,8 @@ def test_committed_drift_md_matches_what_the_tool_currently_produces():
     actual = (REPO / "DRIFT.md").read_text()
     assert actual == expected, (
         "DRIFT.md does not match `python -m platformops.check_drift` output; "
-        "regenerate it before committing"
+        "regenerate it before committing. If the tool reported `unknown`, this "
+        "is a shallow clone and cannot see the history the dashboard needs: "
+        "re-clone with full history. CI checks out with fetch-depth: 0 for "
+        "this reason. See docs/TEMPLATE-VERSION.md."
     )

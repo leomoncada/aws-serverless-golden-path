@@ -61,7 +61,7 @@ Mean lag: 0.0 days.
 
 | Service | Repository | Template | Status | Days behind |
 |---|---|---|---|---|
-| orders-ingest | `leomoncada/aws-serverless-golden-path` | `5ac99ff` | current | 0 |
+| orders-ingest | `leomoncada/aws-serverless-golden-path` | `e11e0d2` | current | 0 |
 ```
 
 The mechanism that keeps it that way is `.github/workflows/drift.yml`: on a
@@ -77,17 +77,19 @@ update pull request to link to here yet; the mechanism it depends on is
 demonstrated locally instead, with `make drift-demo`, which generates a
 copy of the service pinned to an older template commit, shows `cruft check`
 reporting it behind, runs `cruft update`, and confirms it is current
-afterward. A real run of that command against `examples/orders-ingest`:
+afterward. A real run of that command, captured at commit `e11e0d2`; the SHAs
+move with every commit, so treat them as an illustration and rerun it to see
+today's:
 
 ```
---> template HEAD is 5ac99ff; generating orders-ingest into sandbox/.drift-demo pinned to the older template commit 22d81e8 so it starts out behind
---> checking: orders-ingest was generated from 22d81e8, current template HEAD is 5ac99ff
+--> repository HEAD is e11e0d2, which is what cruft compares against; generating orders-ingest into sandbox/.drift-demo pinned to the older template commit 22d81e8 so it starts out behind
+--> checking: orders-ingest was generated from 22d81e8, repository HEAD is e11e0d2
 FAILURE: Project's cruft is out of date! Run `cruft update` to clean this mess up.
---> confirmed behind: orders-ingest is pinned to 22d81e8 while the template is at 5ac99ff; running cruft update
+--> confirmed behind: orders-ingest is pinned to 22d81e8 while the repository is at e11e0d2; running cruft update
 Good work! Project's cruft has been updated and is as clean as possible!
---> .cruft.json now records 5ac99ff
+--> .cruft.json now records e11e0d2
 SUCCESS: Good work! Project's cruft is up to date and as clean as possible :).
---> confirmed current: orders-ingest now matches template HEAD 5ac99ff
+--> confirmed current: orders-ingest now matches repository HEAD e11e0d2
 ```
 
 `cruft update` performs a three-way merge, which has real limits: it can
