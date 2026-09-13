@@ -102,3 +102,12 @@ demo: ## Walk the entire golden path locally
 	$(MAKE) destroy; \
 	$(MAKE) down; \
 	exit $$rc
+
+# Deliberately not part of `make demo`: it needs Node and a full local
+# Backstage app, which is a heavier dependency than the rest of this repo
+# requires, and the golden path underneath must work without it. See
+# docs/running-backstage-locally.md; those steps have not been run in this
+# repository, only validated against the scaffolder schema (tests/test_backstage_template.py).
+.PHONY: portal
+portal: ## Run Backstage locally with this template loaded (needs Node; not part of demo)
+	@echo "See docs/running-backstage-locally.md"
