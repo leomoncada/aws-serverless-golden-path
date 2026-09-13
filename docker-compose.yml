@@ -1,0 +1,25 @@
+services:
+  localstack:
+    # Pinned deliberately. The :latest tag refuses to start without a licence
+    # token, which surfaces as a confusing "LocalStack is broken" for anyone
+    # cloning this repo.
+    image: localstack/localstack:4
+    container_name: golden-path-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      DEBUG: ${DEBUG:-0}
+      SERVICES: s3,lambda,dynamodb,iam,sts,logs,sqs,sns,cloudwatch
+      LAMBDA_RUNTIME_EXECUTOR: docker
+    volumes:
+      - "./localstack/init/ready.d:/etc/localstack/init/ready.d"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    # Readiness is the bucket, not /_localstack/health. That endpoint answers
+    # 200 before the ready.d hooks run, and the bucket is the real precondition
+    # for the very next command a user runs.
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3api head-bucket --bucket tfstate || exit 1"]
+      interval: 3s
+      timeout: 10s
+      retries: 40
+      start_period: 10s
