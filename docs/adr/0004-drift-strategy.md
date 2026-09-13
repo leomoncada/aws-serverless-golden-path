@@ -71,3 +71,15 @@ which.
   adequate for one committed example; it does not scale into a real fleet
   without becoming, in effect, the Backstage catalog it currently stands in
   for.
+- **`cruft update` needs the recorded template reference to actually be
+  reachable.** `examples/orders-ingest/.cruft.json` records `"template":
+  "https://github.com/leomoncada/aws-serverless-golden-path"` rather than a
+  local path, so `cruft update` resolves it identically on any machine or CI
+  runner, unlike an earlier draft of this fixture that recorded the author's
+  own absolute filesystem path and therefore only worked on that one laptop.
+  That said, `cruft update` only runs at all for a service `check_drift.py`
+  reports as behind, which cannot happen until a future commit changes
+  `template/`, by which point this repository has to already be pushed for
+  the scheduled `drift.yml` workflow to be running in the first place. Until
+  then, this reference is correct but unexercised, the same honest category
+  as the AWS path and the Backstage adapter.
