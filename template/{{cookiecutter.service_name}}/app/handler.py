@@ -4,11 +4,24 @@ from datetime import UTC, datetime
 
 import boto3
 
+class _JsonFormatter(logging.Formatter):
+    """Serialise each record's fields as one JSON object, once.
+
+    A hand-rolled template like `'{"level":"%(levelname)s",...}'` splices the
+    message in unescaped, so a message containing a quote or backslash (or,
+    worse, an already-`json.dumps`-encoded string) breaks the resulting line.
+    Building a dict and calling `json.dumps` once avoids that entirely.
+    """
+
+    def format(self, record):
+        return json.dumps({"level": record.levelname, "event": record.getMessage()})
+
+
 logger = logging.getLogger("{{cookiecutter.service_name}}")
 if not logger.handlers:
     h = logging.StreamHandler(sys.stdout)
     if os.environ.get("LOG_JSON", "true").lower() == "true":
-        h.setFormatter(logging.Formatter('{"level":"%(levelname)s","event":"%(message)s"}'))
+        h.setFormatter(_JsonFormatter())
     logger.addHandler(h)
 logger.setLevel(logging.INFO)
 
@@ -36,6 +49,6 @@ def handle(event, context):
                 "received_at": {"S": datetime.now(UTC).isoformat()},
             },
         )
-        logger.info(json.dumps({"msg": "record written", "record_id": record_id, "key": key}))
+        logger.info("record written record_id=%s key=%s", record_id, key)
         written += 1
     return {"written": written}
