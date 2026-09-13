@@ -32,3 +32,46 @@ compose healthcheck, and the tfstate bucket is created inside the container by
 
 `make lint` and `make ci` additionally need [tflint](https://github.com/terraform-linters/tflint)
 on your PATH; `make up`, `make apply`, `make test` and `make down` do not.
+
+## Inspecting the running stack by hand
+
+The `make` targets export dummy credentials for you. Raw `aws` commands do not
+get them, and the CLI resolves credentials before it ever looks at
+`--endpoint-url`, so an expired SSO session fails with a message about
+reauthenticating even though nothing is talking to real AWS. Export these once
+per terminal:
+
+```bash
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION={{cookiecutter.aws_region}}
+unset AWS_PROFILE
+```
+
+LocalStack accepts any credentials. `test` is the conventional value.
+
+Then, with the stack applied:
+
+```bash
+# Alarm states. The no-invocations alarm sits in ALARM with no data, by design.
+aws --endpoint-url=http://localhost:4566 cloudwatch describe-alarms \
+  --query 'MetricAlarms[*].[AlarmName,StateValue,TreatMissingData]' --output table
+
+# Push an object through the pipeline and read the record back.
+BUCKET=$(terraform -chdir=infra output -raw bucket_name)
+TABLE=$(terraform -chdir=infra output -raw table_name)
+echo '{"record_id":"probe-1","amount":42}' > /tmp/probe.json
+aws --endpoint-url=http://localhost:4566 s3 cp /tmp/probe.json "s3://$BUCKET/uploads/probe.json"
+aws --endpoint-url=http://localhost:4566 dynamodb get-item \
+  --table-name "$TABLE" --key '{"record_id":{"S":"probe-1"}}'
+
+# Same object outside the uploads/ prefix is ignored, which is the filter working.
+aws --endpoint-url=http://localhost:4566 s3 cp /tmp/probe.json "s3://$BUCKET/other/probe.json"
+
+# Processor logs.
+aws --endpoint-url=http://localhost:4566 logs tail /aws/lambda/{{cookiecutter.service_name}}-processor
+```
+
+If you would rather not touch your environment, `pip install awscli-local` gives
+you `awslocal`, which sets the endpoint and the dummy credentials itself:
+`awslocal cloudwatch describe-alarms`.
