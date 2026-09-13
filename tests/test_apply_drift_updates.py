@@ -110,6 +110,77 @@ def test_untracked_files_do_not_stop_the_update(tmp_path, monkeypatch):
     assert apply_drift_updates.apply_updates(str(registry), str(tmp_path)) == ["behind-svc"]
 
 
+def _two_behind_services_fixture(tmp_path):
+    """A repo whose two registered services are both behind the current
+    template, each already committed and tracked before any update runs."""
+    _init_repo(tmp_path)
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template" / "cookiecutter.json").write_text("v1\n")
+    old_sha = _commit(tmp_path, "old", when=datetime(2020, 1, 1, tzinfo=UTC))
+
+    (tmp_path / "template" / "cookiecutter.json").write_text("v2\n")
+    _commit(tmp_path, "new (head)", when=datetime(2020, 6, 1, tzinfo=UTC))
+
+    service_dirs = {}
+    for name in ("behind-one", "behind-two"):
+        service_dir = tmp_path / "examples" / name
+        service_dir.mkdir(parents=True)
+        (service_dir / ".cruft.json").write_text(json.dumps({"commit": old_sha}))
+        service_dirs[name] = service_dir
+    _commit(tmp_path, "register two behind services", when=datetime(2020, 6, 2, tzinfo=UTC))
+
+    registry = tmp_path / "registry.yaml"
+    registry.write_text(textwrap.dedent("""
+        services:
+          - name: behind-one
+            repo: o/behind-one
+            path: examples/behind-one
+          - name: behind-two
+            repo: o/behind-two
+            path: examples/behind-two
+    """))
+    return registry, service_dirs
+
+
+def test_two_behind_services_both_update_in_one_run(tmp_path, monkeypatch):
+    """The ordering bug: a real `cruft update` leaves its own service's
+    tracked files modified (`.cruft.json` among them) when it succeeds. With
+    the dirty-tree check inside the loop, the first service's own successful
+    update dirtied the tree, so the second behind service raised, blaming
+    the step order in drift.yml for a dirty tree this same run created. The
+    registry holds one service today so this never fires, but it will the
+    moment a second is registered. The precondition must be checked once,
+    before any update runs, so both services update in the same run.
+    """
+    registry, service_dirs = _two_behind_services_fixture(tmp_path)
+
+    real_run = subprocess.run
+
+    def fake_run(argv, **kwargs):
+        if argv[0] != "cruft":
+            return real_run(argv, **kwargs)
+
+        # What a real `cruft update` does to the service it targets: it
+        # rewrites `.cruft.json` in place, leaving that tracked file
+        # modified and uncommitted, exactly what a naive dirty-tree
+        # recheck before the next service would trip on.
+        cwd = pathlib.Path(kwargs["cwd"])
+        (cwd / ".cruft.json").write_text(json.dumps({"commit": "updated"}))
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(apply_drift_updates.subprocess, "run", fake_run)
+
+    updated = apply_drift_updates.apply_updates(str(registry), str(tmp_path))
+
+    assert updated == ["behind-one", "behind-two"]
+    for service_dir in service_dirs.values():
+        assert json.loads((service_dir / ".cruft.json").read_text())["commit"] == "updated"
+
+
 def test_apply_updates_runs_cruft_update_only_for_services_behind_via_argv(tmp_path, monkeypatch):
     _init_repo(tmp_path)
     (tmp_path / "template").mkdir()
