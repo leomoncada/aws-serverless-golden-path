@@ -226,14 +226,18 @@ aws-serverless-golden-path/
 │       ├── Makefile
 │       └── catalog-info.yaml
 ├── backstage/template.yaml        the thin adapter
-├── platform/
+├── platformops/                   named to avoid shadowing the stdlib `platform` module
 │   ├── registry.yaml              services generated from this template
+│   ├── check_drift.py             resolves each service's template version, builds ServiceStatus
+│   ├── apply_drift_updates.py     runs cruft update for services behind
 │   └── drift_report.py            builds the dashboard
 ├── docs/
 │   ├── DESIGN.md                  this document
+│   ├── TEMPLATE-VERSION.md        what "the current template version" means
 │   └── adr/
 ├── examples/                      one generated service, committed, as a fixture
-├── catalog-info.yaml
+├── tests/                         platformops, template generation and workflow tests
+├── localstack/init/ready.d/       creates the tfstate bucket for the platform's own sandbox runs
 ├── Makefile
 └── README.md
 ```

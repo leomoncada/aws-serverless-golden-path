@@ -41,24 +41,23 @@ def apply_updates(registry_path: str, repo_root: str) -> list[str]:
     registry = yaml.safe_load(pathlib.Path(registry_path).read_text()) or {}
     paths = {entry["name"]: entry["path"] for entry in registry.get("services", [])}
 
-    updated: list[str] = []
-    for status in collect(registry_path, repo_root):
-        if not status.behind:
-            continue
+    statuses = [status for status in collect(registry_path, repo_root) if status.behind]
 
-        # Checked here, on the first service that actually needs an update,
-        # rather than at the top of the function: a clean tree is only a
-        # precondition when there is a cruft update to run, and failing a
-        # run that had nothing to do would be worse than useless.
-        #
-        # This is the defect that made drift.yml incapable of its one job.
-        # The dashboard step used to run first and leave a modified, tracked
-        # DRIFT.md at the repository root, so cruft refused for every
-        # service and the workflow failed in exactly the case it exists for:
-        # a service being behind. The workflow now updates before it writes
-        # the dashboard. If a future edit ever puts a write back in front of
-        # this, fail here, naming the files and the reason, rather than
-        # leaving someone to decode cruft's red text.
+    # Checked once, before any update runs, rather than inside the loop: a
+    # successful `cruft update` itself leaves modified tracked files behind
+    # (a service's own updated files, `.cruft.json` among them), so
+    # re-checking after the first service would trip on that service's own
+    # update and blame the wrong cause for the second one.
+    #
+    # This is the defect that made drift.yml incapable of its one job. The
+    # dashboard step used to run first and leave a modified, tracked
+    # DRIFT.md at the repository root, so cruft refused for every service
+    # and the workflow failed in exactly the case it exists for: a service
+    # being behind. The workflow now updates before it writes the
+    # dashboard. If a future edit ever puts a write back in front of this,
+    # fail here, naming the files and the reason, rather than leaving
+    # someone to decode cruft's red text.
+    if statuses:
         dirty = _modified_tracked_files(repo_root)
         if dirty:
             raise RuntimeError(
@@ -71,6 +70,8 @@ def apply_updates(registry_path: str, repo_root: str) -> list[str]:
                 ".github/workflows/drift.yml explains why it must not."
             )
 
+    updated: list[str] = []
+    for status in statuses:
         service_dir = pathlib.Path(repo_root) / paths[status.name]
         subprocess.run(
             ["cruft", "update", "--skip-apply-ask", "--allow-untracked-files"],
