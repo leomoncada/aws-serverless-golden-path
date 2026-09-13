@@ -1,3 +1,4 @@
+import re
 import subprocess, pathlib, pytest, yaml
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -110,3 +111,42 @@ def test_make_demo_exists_and_excludes_the_portal():
     assert "demo:" in body
     demo_line = [l for l in body.splitlines() if l.startswith("demo:")][0]
     assert "portal" not in demo_line, "portal needs Node and must not be in demo"
+
+
+def _lock_file(generated):
+    return (generated / "infra" / ".terraform.lock.hcl").read_text()
+
+
+# Without a committed lock file every generated service resolves providers
+# fresh, so a new AWS provider release can turn a green pipeline red with
+# nobody having touched the code. The version constraints stay as ranges on
+# purpose: the lock is what pins, which is the normal Terraform split.
+def test_generated_service_ships_a_provider_lock(generated):
+    lock = generated / "infra" / ".terraform.lock.hcl"
+    assert lock.is_file(), "generated service has no infra/.terraform.lock.hcl"
+
+
+def test_the_lock_pins_exact_versions_for_every_declared_provider(generated):
+    body = _lock_file(generated)
+    for provider in ["hashicorp/aws", "hashicorp/archive"]:
+        assert f'provider "registry.terraform.io/{provider}"' in body, (
+            f"{provider} is declared in versions.tf but absent from the lock"
+        )
+    # An exact `version = "x.y.z"` line per provider, not a range.
+    versions = re.findall(r'^\s*version\s*=\s*"(\d+\.\d+\.\d+)"', body, re.M)
+    assert len(versions) >= 2, f"expected an exact version per provider, found {versions}"
+
+
+# CI runs on linux and this repo is developed on macOS. A lock generated for
+# only one of them fails `terraform init` on the other with a checksum error,
+# which reads like a supply chain problem and is really a missing platform.
+# Regenerate with:
+#   terraform providers lock -platform=linux_amd64 -platform=linux_arm64 \
+#     -platform=darwin_amd64 -platform=darwin_arm64
+def test_the_lock_covers_more_than_one_platform(generated):
+    body = _lock_file(generated)
+    per_provider = [block.count("h1:") for block in body.split('provider "')[1:]]
+    assert per_provider, "no provider blocks in the lock file"
+    assert min(per_provider) >= 2, (
+        f"lock looks single-platform, h1 hashes per provider: {per_provider}"
+    )
