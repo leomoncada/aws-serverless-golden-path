@@ -41,3 +41,27 @@ Recording both so this register does not overstate how much diverges.
   in the same run. Destroy still completes successfully; this is latency, not
   a correctness divergence.
   No workaround needed (noted for anyone budgeting CI time in a later task).
+
+## Task 4: processor handler and S3 to DynamoDB integration test
+
+- Expected: the Lambda's own `boto3.client("s3")` and `boto3.client("dynamodb")`
+  calls, made from inside the LocalStack Lambda execution environment with no
+  `endpoint_url` argument and no `aws_endpoint_url` variable threaded into the
+  function's environment, might resolve to real AWS endpoints instead of
+  LocalStack and hang or fail with a credentials error.
+  Observed: LocalStack's Lambda runtime transparently rewrites the AWS SDK
+  endpoint for code running inside its containers, so the handler's
+  `get_object` and `put_item` calls reached LocalStack's S3 and DynamoDB
+  automatically. Both integration tests passed on the first run with no
+  endpoint configuration in `app/handler.py`.
+  No workaround needed.
+
+- Expected: the S3 to Lambda event notification might deliver the object key
+  in a form (URL-encoded, different casing, etc.) that the handler's naive
+  key handling would mishandle, given the brief's own `urllib.parse.unquote_plus`
+  call as a hint that this was anticipated.
+  Observed: LocalStack's event payload matched the documented AWS S3 event
+  shape exactly (`Records[].s3.bucket.name` / `.object.key`); the
+  `unquote_plus` call is defensive and not currently exercised by any
+  observed divergence.
+  No workaround needed.
