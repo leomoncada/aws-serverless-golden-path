@@ -28,3 +28,19 @@ def test_catalog_entry_declares_the_service(generated):
 def test_cruft_records_the_template_origin(generated):
     # This file is what makes drift detection possible at all.
     assert (generated / ".cruft.json").is_file()
+
+def test_generated_service_has_a_ci_workflow(generated):
+    wf = yaml.safe_load((generated / ".github/workflows/ci.yml").read_text())
+    # PyYAML parses the bare key `on` as boolean True.
+    triggers = wf.get("on") or wf.get(True)
+    assert "pull_request" in triggers
+
+def test_generated_ci_calls_make_targets_not_inline_commands(generated):
+    body = (generated / ".github/workflows/ci.yml").read_text()
+    assert "make ci" in body
+    assert "terraform apply" not in body, "CI must call the Makefile, not inline terraform"
+
+def test_generated_compose_pins_the_localstack_image(generated):
+    compose = yaml.safe_load((generated / "docker-compose.yml").read_text())
+    image = compose["services"]["localstack"]["image"]
+    assert image == "localstack/localstack:4", "must be pinned; :latest needs a licence token"
