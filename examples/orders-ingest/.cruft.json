@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/leomoncada/aws-serverless-golden-path",
-  "commit": "5ac99ff826033e885150ff7b319be6e8e7a4388d",
+  "commit": "e11e0d2b706a7a001345177645c61aa3db14a827",
   "checkout": null,
   "context": {
     "cookiecutter": {
