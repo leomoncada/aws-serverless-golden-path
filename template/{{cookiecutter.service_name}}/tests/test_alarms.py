@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 def _alarm(cloudwatch, name):
     found = cloudwatch.describe_alarms(AlarmNames=[name])["MetricAlarms"]
     assert found, f"alarm {name} does not exist"
@@ -35,18 +33,29 @@ def test_absence_of_signal_alarm_fires_with_no_data(cloudwatch):
     )
 
     # The firing assertion below only means anything while the alarm's
-    # evaluation window is genuinely empty. The integration tests in this suite
-    # invoke the processor, so within the alarm's five minute period there are
-    # real datapoints and the alarm is correctly quiet. Skip loudly rather than
-    # pass quietly: a green result here has to mean the assertion ran.
+    # evaluation window is genuinely empty, and the integration tests in this
+    # suite invoke the processor. This used to skip when it found datapoints:
+    # loud in the log, but a skip exits 0, so the one assertion this service's
+    # observability claim rests on could be quietly absent from a green CI
+    # run, and nothing enforced the collection order that kept it present.
+    # An empty window is a precondition of the assertion, so it is asserted,
+    # not skipped.
+    #
+    # `make test` runs this file first, in its own pytest session, before
+    # anything invokes the function, and `make ci` runs `make test` against a
+    # freshly applied stack. The window is therefore empty by construction in
+    # both supported flows. If it is not, something invoked the processor
+    # first, and that is worth a red build rather than a green one that
+    # proved nothing.
     recent = _recent_datapoints(alarm)
-    if recent:
-        pytest.skip(
-            f"the processor was invoked inside the alarm's evaluation window "
-            f"(recentDatapoints={recent}), so the absence of signal cannot be "
-            f"checked right now. Rerun after a fresh apply, or once the alarm's "
-            f"period has passed with no invocations."
-        )
+    assert not recent, (
+        f"the processor was invoked inside the alarm's evaluation window "
+        f"(recentDatapoints={recent}), so the absence of signal this test "
+        f"exists to prove cannot be observed. This test has to run before "
+        f"anything invokes the function; `make test` runs it first, in its "
+        f"own session. Rerun after a fresh `make apply`, or once the alarm's "
+        f"five minute period has passed with no invocations."
+    )
 
     assert alarm["StateValue"] == "ALARM", (
         "alarm should already be in ALARM: no datapoints have been published "

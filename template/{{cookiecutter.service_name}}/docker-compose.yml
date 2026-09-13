@@ -12,4 +12,21 @@ services:
       SERVICES: s3,lambda,dynamodb,iam,sts,logs,sqs,sns,cloudwatch
       LAMBDA_RUNTIME_EXECUTOR: docker
     volumes:
+      # The tfstate bucket the S3 backend needs is created by this hook, at
+      # the point LocalStack declares itself ready, rather than by the
+      # Makefile polling for it afterwards.
+      - "./localstack/init/ready.d:/etc/localstack/init/ready.d"
       - "/var/run/docker.sock:/var/run/docker.sock"
+    # Readiness is the bucket, not /_localstack/health. That endpoint answers
+    # 200 before the ready.d hooks run, and the bucket is the real
+    # precondition for the very next command you run (`make apply`, whose
+    # `terraform init` dials the S3 backend). Bounded at 40 retries: if
+    # LocalStack never becomes ready, `docker compose up --wait` fails in
+    # about two minutes with an unhealthy container, instead of a loop in
+    # this service's Makefile spinning until the CI job's six hour timeout.
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3api head-bucket --bucket tfstate || exit 1"]
+      interval: 3s
+      timeout: 10s
+      retries: 40
+      start_period: 10s

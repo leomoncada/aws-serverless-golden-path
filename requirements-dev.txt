@@ -1,6 +1,11 @@
 cookiecutter==2.6.0
 cruft==2.15.0
 pytest==8.4.2
-boto3==1.35.49
-checkov==3.2.505
+# Was pinned back to 1.35.49 to satisfy checkov's dependency range. checkov
+# was installed but invoked by nothing in this repository, so it has been
+# removed rather than left to read as padding in a repository that claims
+# everything documented is implemented, and boto3 moves forward with it.
+# Terraform linting is not gone: `make lint` runs terraform fmt, terraform
+# validate and tflint, and `make demo` (which CI runs) now calls it.
+boto3==1.43.93
 PyYAML==6.0.3

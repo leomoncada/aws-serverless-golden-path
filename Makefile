@@ -21,7 +21,20 @@ new: ## Generate a service from the template into $(SANDBOX)/$(SERVICE)
 	cruft create . --directory template --no-input --output-dir $(SANDBOX) \
 		--extra-context '{"service_name": "$(SERVICE)"}'
 
-.PHONY: apply test destroy demo drift-demo
+.PHONY: init lint apply test destroy demo drift-demo
+init: ## Initialise the generated sandbox service's Terraform against LocalStack
+	$(MAKE) -C $(SANDBOX)/$(SERVICE) init
+
+# terraform fmt -check, terraform validate and tflint, run against the
+# service this template actually generates. The platform used to install
+# tflint in CI and never invoke it, because nothing here called the generated
+# service's lint target and the generated service's own `make ci` is only run
+# by the generated service's own workflow, in a repository that does not
+# exist yet. An installed linter that never runs reads as padding, so this
+# target exists and `demo` calls it.
+lint: ## Lint the generated sandbox service's Terraform (fmt, validate, tflint)
+	$(MAKE) -C $(SANDBOX)/$(SERVICE) lint
+
 apply: ## Provision the generated sandbox service against LocalStack
 	$(MAKE) -C $(SANDBOX)/$(SERVICE) apply
 
@@ -53,6 +66,14 @@ DRIFT_DIR ?= sandbox/.drift-demo
 # A no-op here (cruft reporting the fresh copy already clean) would be a
 # silent false pass on the repository's whole differentiating claim, so each
 # step below fails loudly instead of falling through quietly.
+#
+# The messages below say "repository HEAD", not "template HEAD", and mean it:
+# this target drives cruft, and cruft compares a recorded commit against the
+# template repository's HEAD, whatever that commit touched. The dashboard
+# asks a different question (has template/ itself moved), which is why the
+# pathspec above is used to pick the demo's starting commit but not to
+# describe what cruft is checking against. docs/TEMPLATE-VERSION.md defines
+# both, and says which answers what.
 drift-demo: ## Generate a service pinned to an old template commit, then show cruft detect and fix the drift
 	@set -e; \
 	rm -rf $(DRIFT_DIR); \
@@ -62,42 +83,49 @@ drift-demo: ## Generate a service pinned to an old template commit, then show cr
 	OLD_SHA=$$(git log --format=%H -- template | tail -1); \
 	OLD_SHORT=$$(git rev-parse --short $$OLD_SHA); \
 	if [ "$$OLD_SHA" = "$$HEAD_SHA" ]; then \
-		echo "--> ERROR: cannot demonstrate drift: the template has only ever existed at HEAD ($$HEAD_SHORT); there is no earlier commit to pin the demo service to" >&2; \
+		echo "--> ERROR: cannot demonstrate drift: template/ has only ever been touched by the commit at repository HEAD ($$HEAD_SHORT), so there is no earlier commit to pin the demo service to. If this is a shallow clone, that is the cause: re-clone with full history (CI checks out with fetch-depth: 0)." >&2; \
 		exit 1; \
 	fi; \
-	echo "--> template HEAD is $$HEAD_SHORT; generating $(SERVICE) into $(DRIFT_DIR) pinned to the older template commit $$OLD_SHORT so it starts out behind"; \
+	echo "--> repository HEAD is $$HEAD_SHORT, which is what cruft compares against; generating $(SERVICE) into $(DRIFT_DIR) pinned to the older template commit $$OLD_SHORT so it starts out behind"; \
 	cruft create . --directory template --no-input --checkout $$OLD_SHA \
 		--output-dir $(DRIFT_DIR) --extra-context '{"service_name": "$(SERVICE)"}'; \
 	cd $(DRIFT_DIR)/$(SERVICE); \
 	git init -q; \
 	git -c user.email=drift-demo@example.invalid -c user.name=drift-demo add -A; \
 	git -c user.email=drift-demo@example.invalid -c user.name=drift-demo commit -q -m "snapshot pinned to $$OLD_SHORT for drift-demo"; \
-	echo "--> checking: $(SERVICE) was generated from $$OLD_SHORT, current template HEAD is $$HEAD_SHORT"; \
+	echo "--> checking: $(SERVICE) was generated from $$OLD_SHORT, repository HEAD is $$HEAD_SHORT"; \
 	if cruft check; then \
 		echo "--> ERROR: expected $(SERVICE) to be reported behind ($$OLD_SHORT vs $$HEAD_SHORT) but cruft reports it clean; drift-demo could not create drift on this run" >&2; \
 		exit 1; \
 	fi; \
-	echo "--> confirmed behind: $(SERVICE) is pinned to $$OLD_SHORT while the template is at $$HEAD_SHORT; running cruft update"; \
+	echo "--> confirmed behind: $(SERVICE) is pinned to $$OLD_SHORT while the repository is at $$HEAD_SHORT; running cruft update"; \
 	cruft update --skip-apply-ask --allow-untracked-files; \
 	NEW_FULL=$$(grep -m1 '"commit"' .cruft.json | sed -E 's/.*"commit": *"([^"]+)".*/\1/'); \
 	echo "--> .cruft.json now records $${NEW_FULL:0:7}"; \
 	if cruft check; then \
-		echo "--> confirmed current: $(SERVICE) now matches template HEAD $$HEAD_SHORT"; \
+		echo "--> confirmed current: $(SERVICE) now matches repository HEAD $$HEAD_SHORT"; \
 	else \
 		echo "--> ERROR: ran cruft update but $(SERVICE) is still reported behind" >&2; \
 		exit 1; \
 	fi
 
 # The claim this repository makes, executable. Generate a service from our own
-# template, provision it, run the tests it shipped with, tear it down.
+# template, lint it, provision it, run the tests it shipped with, tear it down.
 #
-# destroy and down always run, even if an earlier step (new, apply, or test)
-# fails, so a failed run never leaves infrastructure applied or LocalStack
-# running for the next `make demo`; this target still exits non-zero when a
-# step failed.
+# The step list is deliberately the same shape as the generated service's own
+# `make ci` (up init lint apply test): LocalStack has to be reachable before
+# `terraform init` can configure the S3 backend, and `lint`'s `terraform
+# validate` and `tflint` both need an initialised working directory, so init
+# comes before lint. init is an explicit goal here and also apply's
+# prerequisite, and this is one make invocation, so it still runs once.
+#
+# destroy and down always run, even if an earlier step (new, lint, apply, or
+# test) fails, so a failed run never leaves infrastructure applied or
+# LocalStack running for the next `make demo`; this target still exits
+# non-zero when a step failed.
 demo: ## Walk the entire golden path locally
 	@set +e; \
-	$(MAKE) up new apply test drift-demo; \
+	$(MAKE) up new init lint apply test drift-demo; \
 	rc=$$?; \
 	$(MAKE) destroy; \
 	$(MAKE) down; \

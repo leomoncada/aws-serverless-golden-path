@@ -21,15 +21,32 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
 
-      - name: Refresh the drift dashboard
-        run: python -m platformops.check_drift
-
+      # ORDER IS LOAD-BEARING: update first, dashboard second.
+      #
+      # `cruft update` refuses to run against a dirty tree, and it asks git,
+      # which answers for the WHOLE repository no matter which directory
+      # cruft asks from. `--allow-untracked-files` only forgives `??` lines,
+      # and DRIFT.md is tracked. So writing the dashboard first leaves a
+      # modified tracked file at the repository root and every cruft update
+      # below refuses, which means this workflow would fail in exactly the
+      # one case it exists for: a service actually being behind. Updating
+      # first keeps the tree clean at the moment cruft runs, and leaves the
+      # pull request carrying a DRIFT.md that agrees with the update beside
+      # it.
+      #
+      # Two guards keep this from drifting back: apply_drift_updates refuses
+      # to start against a dirty tree and says why (it does not wait for
+      # cruft's own red text), and tests/test_workflows.py asserts this step
+      # order in this file.
       - name: Update registered services that are behind
         # Runs entirely in Python: cruft update is invoked with a list
         # argument vector (platformops/apply_drift_updates.py), so no
         # registry data (a service name, a path) is ever interpolated into
         # a shell command.
         run: python -m platformops.apply_drift_updates
+
+      - name: Refresh the drift dashboard
+        run: python -m platformops.check_drift
 
       - name: Open a pull request with the updates
         uses: peter-evans/create-pull-request@v7
