@@ -38,6 +38,6 @@ def test_bucket_notifies_the_processor_on_upload(s3, lambda_, tf_outputs):
     prefixes = [
         rule["Value"]
         for rule in notification["Filter"]["Key"]["FilterRules"]
-        if rule["Name"] == "prefix"
+        if rule["Name"].lower() == "prefix"
     ]
     assert prefixes == ["uploads/"]
