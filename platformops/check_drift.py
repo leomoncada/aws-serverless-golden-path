@@ -43,6 +43,21 @@ def _is_shallow(repo_root: str) -> bool:
     return _git(repo_root, "rev-parse", "--is-shallow-repository") == "true"
 
 
+def _is_reachable(repo_root: str, sha: str) -> bool:
+    # A rebase or squash merge rewrites the branch's commits, so the SHA a
+    # generated service recorded stops being reachable from the default branch.
+    # It survives locally as a dangling object, which is why this passes on the
+    # machine that did the merge and fails on a fresh clone: a clone fetches
+    # only reachable history. Distinguishing this from a genuinely stale
+    # dashboard is the difference between "regenerate the fixture" and
+    # "regenerate the dashboard", which are different repairs.
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+        cwd=repo_root, capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def _template_version(repo_root: str, rev: str = "HEAD") -> str | None:
     # THE definition, computed in exactly one place: a template version is a
     # commit that touches template/. Asked of HEAD this yields "the current
@@ -79,10 +94,18 @@ def collect(registry_path: str, repo_root: str) -> list[ServiceStatus]:
             current = None if _is_shallow(repo_root) else _template_version(repo_root)
             resolved = True
 
+        # Reachability is checked before resolution, not after, because a
+        # commit orphaned by a rebase survives in the local object store and
+        # resolves perfectly well on the machine that did the merge, while a
+        # fresh clone never fetches it. Resolving first would make this module
+        # answer differently in CI than on a laptop, which is precisely the
+        # failure this check exists to stop.
+        usable = bool(recorded) and current is not None and _is_reachable(repo_root, recorded)
+
         # The service's own template version, resolved exactly the same way
         # as the current one, so both sides of the comparison are the same
         # kind of thing.
-        on = _template_version(repo_root, recorded) if (recorded and current) else None
+        on = _template_version(repo_root, recorded) if usable else None
 
         # No current template version, nothing recorded, or a recorded
         # commit this checkout has never heard of: there is no usable
@@ -90,10 +113,21 @@ def collect(registry_path: str, repo_root: str) -> list[ServiceStatus]:
         # same thing, and this dashboard exists to catch drift, not to
         # explain away an inconclusive check.
         if on is None or current is None:
+            if _is_shallow(repo_root):
+                reason = "shallow clone, history is not present"
+            elif not recorded:
+                reason = "no commit recorded in .cruft.json"
+            elif not _is_reachable(repo_root, recorded):
+                reason = (
+                    "recorded commit is not reachable from HEAD, which is what "
+                    "a rebase or squash merge does to a branch's commits"
+                )
+            else:
+                reason = "recorded commit resolves to no template version"
             statuses.append(ServiceStatus(
                 name=entry["name"], repo=entry["repo"],
                 template_sha=recorded[:7] if recorded else "unknown",
-                behind=False, days_behind=0, unknown=True,
+                behind=False, days_behind=0, unknown=True, unknown_reason=reason,
             ))
             continue
 

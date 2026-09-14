@@ -65,12 +65,25 @@ def test_committed_drift_md_matches_what_the_tool_currently_produces():
     statuses = collect(str(REPO / "platformops/registry.yaml"), str(REPO))
     expected = build_report(statuses)
     actual = (REPO / "DRIFT.md").read_text()
+    # Two different failures reach this line and they need different repairs,
+    # so say which one happened rather than offering one guess for both.
+    inconclusive = [s for s in statuses if s.unknown]
+    if inconclusive:
+        detail = "; ".join(f"{s.name}: {s.unknown_reason}" for s in inconclusive)
+        raise AssertionError(
+            "The drift check could not reach a conclusion, so DRIFT.md cannot "
+            f"be verified. Reason per service: {detail}. If a recorded commit "
+            "is unreachable, the fix is to regenerate the example fixture "
+            "(`SERVICE=orders-ingest SANDBOX=examples make new`) so it records "
+            "a commit reachable from this branch, NOT to regenerate DRIFT.md. "
+            "See docs/TEMPLATE-VERSION.md."
+        )
+
     assert actual == expected, (
-        "DRIFT.md does not match `python -m platformops.check_drift` output; "
-        "regenerate it before committing. If the tool reported `unknown`, this "
-        "is a shallow clone and cannot see the history the dashboard needs: "
-        "re-clone with full history. CI checks out with fetch-depth: 0 for "
-        "this reason. See docs/TEMPLATE-VERSION.md."
+        "DRIFT.md does not match `python -m platformops.check_drift` output. "
+        "The template moved without the dashboard being regenerated: run "
+        "`python -m platformops.check_drift` and commit the result. "
+        "See docs/TEMPLATE-VERSION.md."
     )
 
 

@@ -87,3 +87,34 @@ repository and reports `unknown` rather than that wrong answer, and both
 workflows check out with `fetch-depth: 0` so the question does not arise in CI.
 `make demo` needs full history for the same reason and says so when it does not
 have it.
+
+## Why this repository only allows merge commits
+
+Squash and rebase merging are disabled in the repository settings, and that is
+a consequence of everything above rather than a style preference.
+
+A generated service records, in its `.cruft.json`, the commit it was generated
+from. Squash and rebase both rewrite a branch's commits, so that recorded SHA
+stops being reachable from the default branch the moment such a merge lands.
+The drift check then cannot resolve the service's template version, and the
+committed dashboard no longer matches what the tool produces.
+
+It fails in a particularly unhelpful way. The orphaned commit survives in the
+local object store of whoever performed the merge, so it resolves fine there
+and the tests pass. A fresh clone fetches only reachable history, so CI sees a
+service it cannot place and reports it as unknown. Green locally, red in CI,
+with no code difference between them.
+
+Two defences, because the setting alone is not enough:
+
+- `_is_reachable` in `platformops/check_drift.py` checks reachability BEFORE
+  resolving the recorded commit, so a laptop with a dangling object and a fresh
+  clone reach the same answer.
+- When the check is inconclusive, the reason travels with the result, and
+  `tests/test_docs.py` uses it to name the correct repair: regenerate the
+  example fixture, which is not the same as regenerating the dashboard.
+
+If you ever need to rewrite history on this repository, regenerate the fixture
+afterwards with `SERVICE=orders-ingest SANDBOX=examples make new` and commit the
+result alongside a refreshed `DRIFT.md`.
+

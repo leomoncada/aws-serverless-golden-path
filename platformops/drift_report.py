@@ -25,6 +25,11 @@ class ServiceStatus:
     # silently reported as "current": that would hide the one case this
     # dashboard exists to catch, the case where drift cannot be verified.
     unknown: bool = False
+    # Why the check was inconclusive. Empty when unknown is False. Carried so
+    # a caller can tell "this checkout cannot see the history" apart from
+    # "the recorded commit was rewritten out from under us", which need
+    # different repairs.
+    unknown_reason: str = ""
 
 
 def build_report(entries: list[ServiceStatus]) -> str:

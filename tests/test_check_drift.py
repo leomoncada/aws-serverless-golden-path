@@ -245,3 +245,42 @@ def test_an_empty_recorded_commit_is_reported_unknown_not_current(tmp_path):
     assert len(statuses) == 1
     assert statuses[0].unknown is True
     assert statuses[0].behind is False
+
+
+def test_an_unreachable_recorded_commit_says_so_rather_than_just_unknown(tmp_path):
+    """A rebase or squash merge rewrites a branch's commits, so the SHA a
+    generated service recorded stops being reachable. It survives locally as a
+    dangling object, so this passes on the machine that merged and fails on a
+    fresh clone. The repair is to regenerate the fixture, not the dashboard,
+    and the two are only distinguishable if the reason is carried."""
+    repo = tmp_path
+    _init_repo(repo)
+    (repo / "template").mkdir()
+    (repo / "template" / "main.tf").write_text("# v1\n")
+    _commit(repo, "template v1", datetime(2026, 9, 1, 10, 0))
+
+    svc = repo / "examples" / "orders-ingest"
+    svc.mkdir(parents=True)
+    orphan = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+
+    # Rewrite history so the recorded commit stops being an ancestor of HEAD,
+    # exactly as a rebase merge does.
+    subprocess.run(["git", "checkout", "-q", "--orphan", "rewritten"], cwd=repo, check=True)
+    (repo / "template" / "main.tf").write_text("# v1 rewritten\n")
+    _commit(repo, "template v1, rewritten", datetime(2026, 9, 2, 10, 0))
+
+    (svc / ".cruft.json").write_text(json.dumps({"commit": orphan}))
+    registry = repo / "registry.yaml"
+    registry.write_text(
+        "services:\n  - name: orders-ingest\n    repo: o/orders-ingest\n"
+        "    path: examples/orders-ingest\n"
+    )
+
+    statuses = collect(str(registry), str(repo))
+    assert len(statuses) == 1
+    assert statuses[0].unknown is True
+    assert "not reachable" in statuses[0].unknown_reason
+    assert "rebase or squash" in statuses[0].unknown_reason
